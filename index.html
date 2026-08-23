@@ -18275,6 +18275,202 @@
                 window.print();
             }
         };
+
+// ----------------------------------------------------------------------
+        // 9th & 10th CLASS FIRST LANGUAGE SA1/SA2 100 EXAM & 125 TOTAL FIX
+        // ----------------------------------------------------------------------
+        calculateSubjectFinalMarks = function(subId, marksObj, className) {
+            if (!marksObj) marksObj = createBlankHighSchoolSubjectMarks(subId);
+
+            const isFL = (subId === 's1'); // First Language is ALWAYS 125 Total for Both 9th & 10th!
+
+            const maxMarks = isFL ? 125 : 100;
+            const maxInternal = isFL ? 25 : 20; // 25% for First Language, 20% for Core/SL/TL!
+            const maxExam = isFL ? 100 : 80;    // 100 for First Language, 80 for Core/SL/TL!
+            const passMin = isFL ? 44 : 35;
+
+            // Formative Raw Marks
+            const fa1Tot = (parseFloat(marksObj.fa1?.act1) || 0) + (parseFloat(marksObj.fa1?.act2) || 0) + (parseFloat(marksObj.fa1?.written) || 0);
+            const fa2Tot = (parseFloat(marksObj.fa2?.act1) || 0) + (parseFloat(marksObj.fa2?.act2) || 0) + (parseFloat(marksObj.fa2?.written) || 0);
+            const fa3Tot = (parseFloat(marksObj.fa3?.act1) || 0) + (parseFloat(marksObj.fa3?.act2) || 0) + (parseFloat(marksObj.fa3?.written) || 0);
+            const fa4Tot = (parseFloat(marksObj.fa4?.act1) || 0) + (parseFloat(marksObj.fa4?.act2) || 0) + (parseFloat(marksObj.fa4?.written) || 0);
+
+            const fa1Grade = calculateHighSchoolGrade(fa1Tot, 50);
+            const fa2Grade = calculateHighSchoolGrade(fa2Tot, 50);
+            const fa3Grade = calculateHighSchoolGrade(fa3Tot, 50);
+            const fa4Grade = calculateHighSchoolGrade(fa4Tot, 50);
+
+            // SA1 Calculations (FA1+FA2 -> 20/25%)
+            const sa1Raw = parseFloat(marksObj.sa1?.preparatory100) || 0;
+            const sa1ExamScore = sa1Raw; // Entered directly out of maxExam (80 or 100)!
+            const fa1fa2Sum = fa1Tot + fa2Tot;
+            const fa1fa2Conv = fa1fa2Sum > 0 ? Math.min(maxInternal, Math.ceil((fa1fa2Sum / 100) * maxInternal)) : 0;
+            const sa1Total = Math.round(sa1ExamScore + fa1fa2Conv);
+            const sa1Grade = calculateHighSchoolGrade(sa1Total, maxMarks);
+
+            // FA3 + FA4
+            const fa3fa4Sum = fa3Tot + fa4Tot;
+            const fa3fa4Conv = fa3fa4Sum > 0 ? Math.min(maxInternal, Math.ceil((fa3fa4Sum / 100) * maxInternal)) : 0;
+
+            // Overall FA Summary
+            const fa200Sum = fa1Tot + fa2Tot + fa3Tot + fa4Tot;
+            const fa20Conv = fa200Sum > 0 ? Math.min(maxInternal, Math.ceil((fa200Sum / 200) * maxInternal)) : 0;
+            const fa20Grade = calculateHighSchoolGrade((fa200Sum / 200) * 100, 100);
+
+            // SA2 Calculations
+            const sa2Raw = parseFloat(marksObj.sa2?.preparatory100) || 0;
+            const sa2ExamScore = sa2Raw; // Entered directly out of maxExam (80 or 100)!
+            const sa2Total = Math.round(sa2ExamScore + fa3fa4Conv);
+            const sa2Grade = calculateHighSchoolGrade(sa2Total, maxMarks);
+
+            // Annual Grand Total
+            const activeExamScore = sa2Raw > 0 ? sa2ExamScore : sa1ExamScore;
+            const grandTotal = Math.round(activeExamScore + fa20Conv);
+            const grandGrade = calculateHighSchoolGrade(grandTotal, maxMarks);
+            const pass = grandTotal >= passMin;
+
+            return {
+                fa1Tot, fa1Grade,
+                fa2Tot, fa2Grade,
+                fa3Tot, fa3Grade,
+                fa4Tot, fa4Grade,
+                sa1Raw: sa1ExamScore,
+                sa1ExamScore,
+                fa1fa2Conv,
+                sa1Converted: fa1fa2Conv,
+                sa1Total,
+                sa1Grade,
+                fa3fa4Sum,
+                fa3fa4Conv,
+                sa2Converted: fa3fa4Conv,
+                sa2Raw: sa2ExamScore,
+                sa2ExamScore,
+                sa2Total,
+                sa2Grade,
+                fa200Sum,
+                fa20Conv,
+                fa20Grade,
+                grandTotal,
+                grandGrade,
+                grade: grandGrade,
+                pass,
+                maxMarks,
+                maxInternal,
+                maxExam
+            };
+        };
+
+        renderHighSchoolMarksGrid = function() {
+            const selectedClass = document.getElementById('filterClassMarks') ? document.getElementById('filterClassMarks').value : window.ksrmsState.activeClass;
+            const cat = getClassCategory(selectedClass);
+
+            const subKey = document.getElementById('selectedSubjectSelect') ? document.getElementById('selectedSubjectSelect').value : 's1';
+            let subText = document.getElementById('selectedSubjectSelect') ? document.getElementById('selectedSubjectSelect').options[document.getElementById('selectedSubjectSelect').selectedIndex].text : 'First Language';
+            subText = getSubjectLabelWithLanguage(subKey, subText);
+
+            const activeIndicator = document.getElementById('activeSubjectIndicator');
+            if (activeIndicator) activeIndicator.innerText = `${subText} (${cat === 'CLASS10' ? 'Class 10 SSLC' : 'Class 9'})`;
+
+            const thead = document.getElementById('highSchoolGridHeader');
+            const tbody = document.getElementById('highSchoolGridBody');
+            if (!thead || !tbody) return;
+
+            const isFL = (subKey === 's1'); // First Language is 125 Total (25% Internal, 100 Exam) for Both 9th & 10th!
+            const maxSubjectMarks = isFL ? 125 : 100;
+            const maxInternal = isFL ? 25 : 20;
+            const maxExam = isFL ? 100 : 80;
+
+            thead.innerHTML = `
+                <tr class="bg-dark text-white text-center fs-8">
+                    <th rowspan="2" class="align-middle">#</th>
+                    <th rowspan="2" class="align-middle" style="min-width: 150px;">ವಿದ್ಯಾರ್ಥಿಯ ಹೆಸರು</th>
+                    <th colspan="5" class="bg-primary text-white">FA1 (50)</th>
+                    <th colspan="5" class="bg-primary text-white">FA2 (50)</th>
+                    <th colspan="4" class="bg-info text-dark">SA1 (Total: ${maxSubjectMarks})</th>
+                    <th colspan="5" class="bg-secondary text-white">FA3 (50)</th>
+                    <th colspan="5" class="bg-secondary text-white">FA4 (50)</th>
+                    <th colspan="2" class="bg-warning text-dark">FA Summary fa3&amp;4</th>
+                    <th colspan="6" class="bg-success text-white">SA2 / Board Exam (Total: ${maxSubjectMarks})</th>
+                </tr>
+                <tr class="bg-light text-center fs-8">
+                    <th>ACT1(15)</th><th>ACT2(15)</th><th>Test(20)</th><th>Tot</th><th>Grade</th>
+                    <th>ACT3(15)</th><th>ACT4(15)</th><th>Test(20)</th><th>Tot</th><th>Grade</th>
+                    <th>For ${maxExam}</th><th>For ${maxInternal}% (FA1&amp;2)</th><th>SA1 Tot</th><th>Grade</th>
+                    <th>ACT5(15)</th><th>ACT6(15)</th><th>Test(20)</th><th>Tot</th><th>Grade</th>
+                    <th>ACT7(15)</th><th>ACT8(15)</th><th>Test(20)</th><th>Tot</th><th>Grade</th>
+                    <th class="bg-warning bg-opacity-25">For ${maxInternal}%</th><th class="bg-warning bg-opacity-25">Grade</th>
+                    <th class="bg-success bg-opacity-10">FOR 200 (fa1+fa2+fa3+fa4)</th><th>For ${maxInternal}%</th><th>SA2 (${maxExam})</th><th>Total</th><th>Grade</th><th>Status</th>
+                </tr>
+            `;
+
+            const filteredStudents = sampleStudents.filter(s => s && isSameClass(s.className, selectedClass));
+
+            if (filteredStudents.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="35" class="text-center p-3 text-muted">ಈ ತರಗತಿಯಲ್ಲಿ ಯಾವುದೇ ವಿದ್ಯಾರ್ಥಿಗಳಿಲ್ಲ.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filteredStudents.map((s, idx) => {
+                if (!s.hsMarks) s.hsMarks = {};
+                if (!s.hsMarks[subKey]) s.hsMarks[subKey] = createBlankHighSchoolSubjectMarks(subKey);
+
+                const m = s.hsMarks[subKey];
+                const calc = calculateSubjectFinalMarks(subKey, m, selectedClass);
+
+                return `
+                    <tr data-st-id="${s.id}" class="align-middle text-center fs-8">
+                        <td>${idx + 1}</td>
+                        <td class="text-start fw-bold ps-2">${s.name} ${s.cwsnStatus === 'Yes-Exempt' ? '<span class="badge bg-danger">CWSN</span>' : ''}</td>
+
+                        <!-- FA-1 -->
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa1" data-field="act1" value="${m.fa1?.act1||''}" max="15" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa1" data-field="act2" value="${m.fa1?.act2||''}" max="15" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa1" data-field="written" value="${m.fa1?.written||''}" max="20" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td class="fw-bold bg-light col-fa1-tot">${calc.fa1Tot}</td>
+                        <td class="fw-bold col-fa1-grade">${calc.fa1Grade}</td>
+
+                        <!-- FA-2 -->
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa2" data-field="act1" value="${m.fa2?.act1||''}" max="15" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa2" data-field="act2" value="${m.fa2?.act2||''}" max="15" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa2" data-field="written" value="${m.fa2?.written||''}" max="20" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td class="fw-bold bg-light col-fa2-tot">${calc.fa2Tot}</td>
+                        <td class="fw-bold col-fa2-grade">${calc.fa2Grade}</td>
+
+                        <!-- SA-1 -->
+                        <td><input type="number" class="mark-input hs-input" style="width: 58px;" data-sub="${subKey}" data-test="sa1" data-field="preparatory100" value="${m.sa1?.preparatory100||''}" max="${maxExam}" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td class="fw-bold bg-info bg-opacity-10 col-sa1-conv">${calc.fa1fa2Conv}</td>
+                        <td class="fw-bold bg-light col-sa1-tot">${calc.sa1Total}</td>
+                        <td class="fw-bold col-sa1-grade">${calc.sa1Grade}</td>
+
+                        <!-- FA-3 -->
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa3" data-field="act1" value="${m.fa3?.act1||''}" max="15" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa3" data-field="act2" value="${m.fa3?.act2||''}" max="15" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa3" data-field="written" value="${m.fa3?.written||''}" max="20" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td class="fw-bold bg-light col-fa3-tot">${calc.fa3Tot}</td>
+                        <td class="fw-bold col-fa3-grade">${calc.fa3Grade}</td>
+
+                        <!-- FA-4 -->
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa4" data-field="act1" value="${m.fa4?.act1||''}" max="15" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa4" data-field="act2" value="${m.fa4?.act2||''}" max="15" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td><input type="number" class="mark-input hs-input" data-sub="${subKey}" data-test="fa4" data-field="written" value="${m.fa4?.written||''}" max="20" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td class="fw-bold bg-light col-fa4-tot">${calc.fa4Tot}</td>
+                        <td class="fw-bold col-fa4-grade">${calc.fa4Grade}</td>
+
+                        <!-- FA Summary fa3&4 -->
+                        <td class="fw-bold text-primary bg-warning bg-opacity-25 col-fa34-conv">${calc.fa3fa4Conv}</td>
+                        <td class="fw-bold bg-warning bg-opacity-25 col-fa34-grade">${calculateHighSchoolGrade((calc.fa3fa4Sum/100)*100, 100)}</td>
+
+                        <!-- SA2 / Board Exam -->
+                        <td class="fw-bold bg-light col-fa200-tot">${calc.fa200Sum}</td>
+                        <td class="fw-bold text-primary bg-light col-fa20-conv">${calc.fa20Conv}</td>
+                        <td><input type="number" class="mark-input hs-input" style="width: 58px;" data-sub="${subKey}" data-test="sa2" data-field="preparatory100" value="${m.sa2?.preparatory100||''}" max="${maxExam}" oninput="updateHighSchoolMarkInline(this, '${s.id}')" onkeydown="handleGridKeyNav(event, this)"></td>
+                        <td class="fw-bold text-dark fs-7 bg-success bg-opacity-10 col-grand-tot">${calc.grandTotal}</td>
+                        <td><span class="badge ${calc.pass ? 'bg-success' : 'bg-danger'} col-grade">${calc.grandGrade}</span></td>
+                        <td><span class="fw-bold ${calc.pass ? 'text-success' : 'text-danger'} col-status">${calc.pass ? 'Pass' : 'Fail'}</span></td>
+                    </tr>
+                `;
+            }).join('');
+        };
         
     </script>
 </body>
