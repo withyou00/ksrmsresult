@@ -18199,6 +18199,82 @@
                 window.print();
             }
         };
+
+// ----------------------------------------------------------------------
+        // FLAWLESS 100% NO-CROP SINGLE-PAGE A4 PDF ENGINE (MOBILE & LAPTOP)
+        // ----------------------------------------------------------------------
+        exportCurrentReportToPdf = function() {
+            if (!checkLicensePermission("export PDF report")) return;
+
+            const printContainer = document.getElementById('printContainer');
+            if (!printContainer || !printContainer.innerHTML.trim()) {
+                return alert(t('Export ಮಾಡಲು ಯಾವುದೇ ವರದಿ ಲಭ್ಯವಿಲ್ಲ!', 'No report available for PDF export!'));
+            }
+
+            const isPortraitCard = printContainer.querySelector('.individual-report-card') !== null;
+            const targetElement = printContainer.querySelector('.individual-report-card') || 
+                                  printContainer.querySelector('#broadsheetTableToExport') || 
+                                  printContainer.firstElementChild;
+
+            if (!targetElement) {
+                return alert(t('ವರದಿ ಪ್ರಿಂಟ್ ಸಿದ್ಧವಾಗಿಲ್ಲ!', 'Report element not found!'));
+            }
+
+            const dropdown = document.getElementById('rptStudentSelect');
+            const st = sampleStudents.find(s => String(s.id) === String(dropdown?.value));
+            const stName = st ? st.name.replace(/\s+/g, '_') : 'Report';
+            const fileName = `${stName}_KSRMS_CCE_${Date.now()}.pdf`;
+
+            // Configure html2pdf for exact bounding-box capture without any side crops
+            const opt = {
+                margin: isPortraitCard ? [3, 3, 3, 3] : [4, 4, 4, 4],
+                filename: fileName,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    letterRendering: true,
+                    scrollX: 0,
+                    scrollY: 0,
+                    logging: false
+                },
+                jsPDF: {
+                    unit: 'mm',
+                    format: 'a4',
+                    orientation: isPortraitCard ? 'portrait' : 'landscape',
+                    compress: true
+                },
+                pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+            };
+
+            if (typeof html2pdf !== 'undefined') {
+                const currentScrollY = window.scrollY;
+                window.scrollTo(0, 0);
+
+                // Temporarily enforce strict 190mm width during capture so mobile screens don't crop
+                const origStyle = targetElement.getAttribute('style') || '';
+                if (isPortraitCard) {
+                    targetElement.style.width = '190mm';
+                    targetElement.style.maxWidth = '190mm';
+                    targetElement.style.margin = '0 auto';
+                    targetElement.style.boxSizing = 'border-box';
+                }
+
+                html2pdf().set(opt).from(targetElement).save().then(() => {
+                    targetElement.setAttribute('style', origStyle);
+                    window.scrollTo(0, currentScrollY);
+                }).catch((err) => {
+                    targetElement.setAttribute('style', origStyle);
+                    window.scrollTo(0, currentScrollY);
+                    console.error("PDF Export Error:", err);
+                    alert("PDF Export error! Printing via system dialog instead.");
+                    window.print();
+                });
+            } else {
+                alert("PDF Engine missing! Opening Print Dialog.");
+                window.print();
+            }
+        };
         
     </script>
 </body>
