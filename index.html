@@ -2080,7 +2080,7 @@
             window.open(`https://api.whatsapp.com/send?phone=919902090911&text=${encodeURIComponent(msg)}`, '_blank');
         }
 
-      function performAdminLogin() {
+   function performAdminLogin() {
     const u = document.getElementById('adminUsername').value.trim();
     const p = document.getElementById('adminPassword').value.trim();
 
@@ -2089,10 +2089,8 @@
         return;
     }
 
-    // Firebase ಮೂಲಕ ಸುರಕ್ಷಿತವಾಗಿ ಚೆಕ್ ಮಾಡುವುದು
     firebase.auth().signInWithEmailAndPassword(u, p)
         .then((userCredential) => {
-            // ಲಾಗಿನ್ ಯಶಸ್ವಿಯಾದರೆ (Success)
             currentSession = { 
                 isLoggedIn: true, 
                 role: 'admin', 
@@ -2107,12 +2105,10 @@
             alert('Master Admin Access Granted!');
         })
         .catch((error) => {
-            // ಪಾಸ್‌ವರ್ಡ್ ತಪ್ಪಾಗಿದ್ದರೆ (Error)
             alert('ತಪ್ಪು Admin Credentials! (Invalid Email/Password)');
             console.error("Firebase Login Error: ", error.message);
         });
 }
-        }
 
         // EXCEL IMPORT ENGINE
         function normalizeGenderStrict(val) {
