@@ -18,9 +18,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
-    <!-- Firebase Cloud Database SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <!-- Firebase Cloud Database SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script> 
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
     <style id="dynamicPageStyle">
         @page { size: A4 portrait; margin: 4mm; }
@@ -1508,8 +1509,7 @@
             "6th Standard", "7th Standard", "8th Standard", "9th Standard", "10th Standard"
         ];
 
-        const ADMIN_USER = "WithYou2026";
-        const ADMIN_PASS = "WithYoupassword2026";
+      
         const ADMIN_MOBILE = "9902090911";
 
         let currentLang = 'kn';
@@ -2080,20 +2080,38 @@
             window.open(`https://api.whatsapp.com/send?phone=919902090911&text=${encodeURIComponent(msg)}`, '_blank');
         }
 
-        function performAdminLogin() {
-            const u = document.getElementById('adminUsername').value.trim();
-            const p = document.getElementById('adminPassword').value.trim();
+      function performAdminLogin() {
+    const u = document.getElementById('adminUsername').value.trim();
+    const p = document.getElementById('adminPassword').value.trim();
 
-            if (u === ADMIN_USER && p === ADMIN_PASS) {
-                currentSession = { isLoggedIn: true, role: 'admin', diseCode: 'ALL', schoolName: 'Master Admin', mobile: ADMIN_MOBILE };
-                saveCurrentSession();
+    if (!u || !p) {
+        alert('ದಯವಿಟ್ಟು Username/Email ಮತ್ತು Password ನಮೂದಿಸಿ!');
+        return;
+    }
 
-                loginModalInstance.hide();
-                updateSessionUI();
-                alert('Master Admin Access Granted!');
-            } else {
-                alert('ತಪ್ಪು Admin Credentials!');
-            }
+    // Firebase ಮೂಲಕ ಸುರಕ್ಷಿತವಾಗಿ ಚೆಕ್ ಮಾಡುವುದು
+    firebase.auth().signInWithEmailAndPassword(u, p)
+        .then((userCredential) => {
+            // ಲಾಗಿನ್ ಯಶಸ್ವಿಯಾದರೆ (Success)
+            currentSession = { 
+                isLoggedIn: true, 
+                role: 'admin', 
+                diseCode: 'ALL', 
+                schoolName: 'Master Admin', 
+                mobile: ADMIN_MOBILE 
+            };
+            saveCurrentSession();
+
+            loginModalInstance.hide();
+            updateSessionUI();
+            alert('Master Admin Access Granted!');
+        })
+        .catch((error) => {
+            // ಪಾಸ್‌ವರ್ಡ್ ತಪ್ಪಾಗಿದ್ದರೆ (Error)
+            alert('ತಪ್ಪು Admin Credentials! (Invalid Email/Password)');
+            console.error("Firebase Login Error: ", error.message);
+        });
+}
         }
 
         // EXCEL IMPORT ENGINE
