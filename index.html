@@ -19153,6 +19153,218 @@
                     </tr>`;
             }).join('');
         };
+
+// ----------------------------------------------------------------------
+        // LIVE REGISTRATION REQUESTS, MASTER ADMIN APPROVAL & AUTO-KEY ENGINE
+        // ----------------------------------------------------------------------
+
+        // 1. School Registration Request Submission
+        async function submitSchoolRegistrationRequest() {
+            const sName = document.getElementById('purSchoolName')?.value.trim();
+            const dise = document.getElementById('purDiseCode')?.value.trim();
+            const mob = document.getElementById('purMobile')?.value.trim();
+
+            if (!sName || !dise || !mob) return alert('ದಯವಿಟ್ಟು ಎಲ್ಲಾ ವಿವರಗಳನ್ನು ನಮೂದಿಸಿ!');
+            if (!/^\d{11}$/.test(dise)) return alert('ಅಮಾನ್ಯ DISE Code! 11 ಅಂಕೆಗಳು ಕಡ್ಡಾಯ.');
+
+            const reqObj = {
+                diseCode: dise,
+                schoolName: sName,
+                mobile: mob,
+                requestedAt: Date.now(),
+                status: 'PENDING'
+            };
+
+            // Save Request to Firebase Cloud
+            if (db) {
+                try {
+                    await db.collection("ksrms_pending_requests").doc(dise).set(reqObj);
+                    alert(`ನಿಮ್ಮ ಶಾಲೆಯ (${sName}) ನೋಂದಣಿ ವಿನಂತಿ ಅಡ್ಮಿನ್‌ಗೆ ಯಶಸ್ವಿಯಾಗಿ ಸಲ್ಲಿಕೆಯಾಗಿದೆ!\n\nMaster Admin ಅನುಮೋದಿಸಿದ (Approve ಮಾಡಿದ) ತಕ್ಷಣ ನಿಮ್ಮ Secret Key ವಾಟ್ಸಾಪ್‌ಗೆ ಬರಲಿದೆ.`);
+                    
+                    // Optional WhatsApp trigger backup
+                    processPurchaseWhatsAppTrigger();
+                    if (purchaseModalInstance) purchaseModalInstance.hide();
+                } catch(e) {
+                    console.error("Registration request error:", e);
+                    alert("Cloud request error! WhatsApp ಸಹಾಯ ಪಡೆಯಿರಿ.");
+                    processPurchaseWhatsAppTrigger();
+                }
+            } else {
+                processPurchaseWhatsAppTrigger();
+            }
+        }
+
+        // 2. Master Admin Approve Request Function
+        async function approveSchoolRegistration(dise, schoolName, mobile) {
+            if (currentSession.role !== 'admin') return alert("Only Master Admin can approve requests!");
+
+            const key = `KSRMS-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
+            const expiresAt = Date.now() + (365 * 24 * 60 * 60 * 1000);
+            const expDateStr = new Date(expiresAt).toLocaleDateString('en-GB');
+
+            if (confirm(`ಖಚಿತವಾಗಿ "${schoolName}" (DISE: ${dise}) ಶಾಲೆಯನ್ನು ಅನುಮೋದಿಸಬೇಕೇ (Approve)?\n\n- ಹೊಸ Key ಜನರೇಟ್ ಆಗುತ್ತದೆ: ${key}\n- 1 ವರ್ಷದ ಲೈಸೆನ್ಸ್ ಸಕ್ರಿಯಗೊಳ್ಳುತ್ತದೆ.`)) {
+                const licenseObj = {
+                    diseCode: dise,
+                    schoolName: schoolName,
+                    mobile: mobile,
+                    secretKey: key,
+                    activatedAt: Date.now(),
+                    expiresAt: expiresAt,
+                    status: 'ACTIVE',
+                    studentCount: 0
+                };
+
+                // Save Approved License to Cloud & Local
+                const dbKeys = JSON.parse(localStorage.getItem('ksrms_keys_db') || '[]');
+                dbKeys.push(licenseObj);
+                localStorage.setItem('ksrms_keys_db', JSON.stringify(dbKeys));
+
+                if (db) {
+                    try {
+                        await db.collection("ksrms_licenses").doc(dise).set(licenseObj);
+                        await db.collection("ksrms_pending_requests").doc(dise).delete();
+                    } catch(e) {
+                        console.error("Approve cloud error:", e);
+                    }
+                }
+
+                renderAdminKeysTable();
+                alert(`ಅನುಮೋದನೆ ಯಶಸ್ವಿಯಾಗಿದೆ!\n\n${schoolName} ಶಾಲೆಗೆ Secret Key: ${key} ಸಕ್ರಿಯಗೊಂಡಿದೆ.`);
+                sendKeyToSchoolWhatsApp(dise, schoolName, key, mobile);
+            }
+        }
+
+        // 3. Master Admin Reject Request Function
+        async function rejectSchoolRegistration(dise, schoolName, mobile) {
+            if (currentSession.role !== 'admin') return alert("Only Master Admin can reject requests!");
+
+            const reason = prompt(`"${schoolName}" ಶಾಲೆಯ ನೋಂದಣಿ ವಿನಂತಿಯನ್ನು ತಿರಸ್ಕರಿಸಲು ಕಾರಣ ಬರೆಯಿರಿ:`, "ಪಾವತಿ ಮಾಹಿತಿ ದೃಢಪಟ್ಟಿಲ್ಲ");
+            if (reason === null) return;
+
+            if (db) {
+                try {
+                    await db.collection("ksrms_pending_requests").doc(dise).delete();
+                    alert(`"${schoolName}" ಶಾಲೆಯ ವಿನಂತಿಯನ್ನು ತಿರಸ್ಕರಿಸಲಾಗಿದೆ.`);
+                    renderAdminKeysTable();
+
+                    // Optional WhatsApp notification to school
+                    const cleanMob = String(mobile || '').replace(/\D/g, '');
+                    const msg = `ನಮಸ್ಕಾರ,\n\n${schoolName} ಶಾಲೆಯ KSRMS ನೋಂದಣಿ ವಿನಂತಿಯನ್ನು ತಿರಸ್ಕರಿಸಲಾಗಿದೆ.\nಕಾರಣ: ${reason}\n\nಹೆಚ್ಚಿನ ಮಾಹಿತಿಗಾಗಿ ಸಂಪರ್ಕಿಸಿ: 9902090911`;
+                    if (cleanMob.length >= 10) {
+                        window.open(`https://api.whatsapp.com/send?phone=91${cleanMob.slice(-10)}&text=${encodeURIComponent(msg)}`, '_blank');
+                    }
+                } catch(e) {}
+            }
+        }
+
+        // 4. Render Live Pending Requests Table in Admin Panel
+        async function renderPendingRequestsInAdminPanel() {
+            let pendingSection = document.getElementById('adminPendingRequestsContainer');
+            const adminModalBody = document.querySelector('#adminPanelModal .modal-body');
+
+            if (!pendingSection && adminModalBody) {
+                pendingSection = document.createElement('div');
+                pendingSection.id = 'adminPendingRequestsContainer';
+                pendingSection.className = 'card border-warning shadow-sm mb-4';
+                
+                const firstHr = adminModalBody.querySelector('hr');
+                if (firstHr) {
+                    adminModalBody.insertBefore(pendingSection, firstHr);
+                } else {
+                    adminModalBody.appendChild(pendingSection);
+                }
+            }
+
+            if (!pendingSection) return;
+
+            let pendingList = [];
+            if (db) {
+                try {
+                    const snap = await db.collection("ksrms_pending_requests").get();
+                    if (!snap.empty) {
+                        snap.forEach(doc => { pendingList.push(doc.data()); });
+                    }
+                } catch(e) {}
+            }
+
+            if (pendingList.length === 0) {
+                pendingSection.innerHTML = `
+                    <div class="card-header bg-warning text-dark fw-bold py-2 fs-7 d-flex justify-content-between align-items-center">
+                        <span><i class="fa-solid fa-clock-rotate-left me-2"></i> ಕಾಯುತ್ತಿರುವ ಶಾಲಾ ನೋಂದಣಿ ವಿನಂತಿಗಳು (Pending Requests)</span>
+                        <span class="badge bg-dark text-white">0 Requests</span>
+                    </div>
+                    <div class="card-body p-2 bg-light text-center text-muted fs-8">
+                        ಯಾವುದೇ ಹೊಸ ನೋಂದಣಿ ವಿನಂತಿಗಳು ಕಾಯುತ್ತಿಲ್ಲ.
+                    </div>`;
+                return;
+            }
+
+            let pendingRows = pendingList.map((p, idx) => `
+                <tr>
+                    <td>${idx + 1}</td>
+                    <td class="fw-bold text-primary">${p.diseCode}</td>
+                    <td class="text-start ps-2 fw-bold">${p.schoolName}</td>
+                    <td>${p.mobile || '-'}</td>
+                    <td>${new Date(p.requestedAt || Date.now()).toLocaleDateString('en-GB')}</td>
+                    <td>
+                        <button class="btn btn-xs btn-success fw-bold py-1 px-2 me-1 shadow-sm" onclick="approveSchoolRegistration('${p.diseCode}', '${p.schoolName}', '${p.mobile}')">
+                            <i class="fa-solid fa-circle-check me-1"></i> APPROVE &amp; Key ಕಳುಹಿಸಿ
+                        </button>
+                        <button class="btn btn-xs btn-outline-danger fw-bold py-1 px-2" onclick="rejectSchoolRegistration('${p.diseCode}', '${p.schoolName}', '${p.mobile}')">
+                            <i class="fa-solid fa-circle-xmark me-1"></i> REJECT
+                        </button>
+                    </td>
+                </tr>`).join('');
+
+            pendingSection.innerHTML = `
+                <div class="card-header bg-warning text-dark fw-bold py-2 fs-7 d-flex justify-content-between align-items-center">
+                    <span><i class="fa-solid fa-bell fa-bounce me-2 text-danger"></i> ಕಾಯುತ್ತಿರುವ ಶಾಲಾ ನೋಂದಣಿ ವಿನಂತಿಗಳು (Pending Requests)</span>
+                    <span class="badge bg-danger text-white fs-7">${pendingList.length} PENDING</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 200px;">
+                        <table class="table table-bordered table-sm text-center fs-8 align-middle mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>#</th>
+                                    <th>DISE Code</th>
+                                    <th>School Name</th>
+                                    <th>Mobile</th>
+                                    <th>Date</th>
+                                    <th>Action (ಅನುಮೋದನೆ)</th>
+                                </tr>
+                            </thead>
+                            <tbody>${pendingRows}</tbody>
+                        </table>
+                    </div>
+                </div>`;
+        }
+
+        // Attach Submit Request to Purchase Modal Button
+        (function hookPurchaseModalButton() {
+            function updateBtn() {
+                const purBtn = document.querySelector('#purchaseModal .d-grid button');
+                if (purBtn) {
+                    purBtn.onclick = submitSchoolRegistrationRequest;
+                    purBtn.innerHTML = `<i class="fa-solid fa-paper-plane me-1"></i> ನೋಂದಾಯಿಸಿ &amp; Request Activation (₹500)`;
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', updateBtn);
+            } else {
+                updateBtn();
+            }
+        })();
+
+        // Auto Refresh Pending Requests when Admin Panel opens
+        const _baseRenderAdminTable = renderAdminKeysTable;
+        renderAdminKeysTable = async function() {
+            if (typeof _baseRenderAdminTable === 'function') {
+                await _baseRenderAdminTable();
+            }
+            renderPendingRequestsInAdminPanel();
+        };
         
     </script>
 </body>
