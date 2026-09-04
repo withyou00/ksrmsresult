@@ -18972,6 +18972,187 @@
                 subscribeToRealtimeNotices();
             }
         })();
+
+// ----------------------------------------------------------------------
+        // LIVE REVENUE ANALYTICS & 1-CLICK WHATSAPP EXPIRY REMINDER ENGINE
+        // ----------------------------------------------------------------------
+
+        // 1. Send WhatsApp Expiry Reminder Alert
+        function sendExpiryReminderWhatsApp(dise, schoolName, key, mobile, expDateStr, diffDays) {
+            const cleanMob = String(mobile || '').replace(/\D/g, '');
+            let statusMsg = "";
+            if (diffDays <= 0) {
+                statusMsg = `ನಿಮ್ಮ KSRMS V3.2 ಸಬ್‌ಸ್ಕ್ರಿಪ್ಷನ್ ಅವಧಿ ಮುಕ್ತಾಯಗೊಂಡಿದೆ (Expired).`;
+            } else {
+                statusMsg = `ನಿಮ್ಮ KSRMS V3.2 ಸಬ್‌ಸ್ಕ್ರಿಪ್ಷನ್ ಅವಧಿ ಇನ್ನೂ ${diffDays} ದಿನಗಳಲ್ಲಿ (${expDateStr}) ಮುಕ್ತಾಯಗೊಳ್ಳಲಿದೆ.`;
+            }
+
+            const msg = `ನಮಸ್ಕಾರ,\n\n${schoolName} (DISE: ${dise})\n${statusMsg}\n\nನಿಮ್ಮ ಶಾಲೆಯ ಅಡೆತಡೆಯಿಲ್ಲದ ಸೇವೆ ಹಾಗೂ ಮಕ್ಕಳ ಡೇಟಾ ಸುರಕ್ಷತೆಗಾಗಿ ದಯವಿಟ್ಟು ₹500 ಪಾವತಿಸಿ ಲೈಸೆನ್ಸ್ ನವೀಕರಿಸಿ (Renew).\n\n• PhonePe / GPay: 9902090911\n• KSRMS Admin Support`;
+            
+            const waUrl = cleanMob.length >= 10 ? `https://api.whatsapp.com/send?phone=91${cleanMob.slice(-10)}&text=${encodeURIComponent(msg)}` : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+            window.open(waUrl, '_blank');
+        }
+
+        // 2. Comprehensive Admin Panel Renderer with Live Revenue Analytics & Expiry Alerts
+        filterAdminKeysTable = async function() {
+            const query = (document.getElementById('adminSearchKeyInput')?.value || '').trim().toLowerCase();
+            const dbKeys = window.allAdminCloudKeys || JSON.parse(localStorage.getItem('ksrms_keys_db') || '[]');
+            const tbody = document.getElementById('adminKeysTableBody');
+            if (!tbody) return;
+
+            // Calculate Live Revenue & Analytics
+            const activeCount = dbKeys.filter(k => {
+                const expTime = k.expiresAt ? (typeof k.expiresAt === 'number' ? k.expiresAt : (k.expiresAt.toMillis ? k.expiresAt.toMillis() : Date.now())) : Date.now();
+                return Date.now() < expTime;
+            }).length;
+
+            const expiredCount = dbKeys.length - activeCount;
+            
+            const expiringSoonCount = dbKeys.filter(k => {
+                const expTime = k.expiresAt ? (typeof k.expiresAt === 'number' ? k.expiresAt : (k.expiresAt.toMillis ? k.expiresAt.toMillis() : Date.now())) : Date.now();
+                const diffDays = Math.ceil((expTime - Date.now()) / (1000 * 60 * 60 * 24));
+                return diffDays > 0 && diffDays <= 7;
+            }).length;
+
+            const totalRevenue = activeCount * 500; // ₹500 Per Active School License
+
+            // Render / Update Live Revenue Analytics Cards in Admin Panel
+            let analyticsDiv = document.getElementById('adminRevenueAnalyticsCards');
+            if (!analyticsDiv) {
+                analyticsDiv = document.createElement('div');
+                analyticsDiv.id = 'adminRevenueAnalyticsCards';
+                analyticsDiv.className = 'row g-2 mb-3';
+                const tableContainer = document.querySelector('#adminPanelModal .table-responsive');
+                if (tableContainer) {
+                    tableContainer.parentNode.insertBefore(analyticsDiv, tableContainer);
+                }
+            }
+
+            analyticsDiv.innerHTML = `
+                <div class="col-md-3">
+                    <div class="card bg-success text-white border-0 shadow-sm p-2 text-center">
+                        <small class="fw-bold text-uppercase fs-8"><i class="fa-solid fa-indian-rupee-sign me-1"></i> ಒಟ್ಟು ಸಂಗ್ರಹ ಆದಾಯ</small>
+                        <h4 class="mb-0 fw-bold">₹ ${totalRevenue.toLocaleString('en-IN')}</h4>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white border-0 shadow-sm p-2 text-center">
+                        <small class="fw-bold text-uppercase fs-8"><i class="fa-solid fa-circle-check me-1"></i> ಸಕ್ರಿಯ ಖಾತೆಗಳು</small>
+                        <h4 class="mb-0 fw-bold">${activeCount} <small class="fs-8">ಶಾಲೆಗಳು</small></h4>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-warning text-dark border-0 shadow-sm p-2 text-center">
+                        <small class="fw-bold text-uppercase fs-8"><i class="fa-solid fa-clock me-1"></i> 7 ದಿನ ಬಾಕಿ (Expiring)</small>
+                        <h4 class="mb-0 fw-bold">${expiringSoonCount} <small class="fs-8">ಶಾಲೆಗಳು</small></h4>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-danger text-white border-0 shadow-sm p-2 text-center">
+                        <small class="fw-bold text-uppercase fs-8"><i class="fa-solid fa-triangle-exclamation me-1"></i> ಮುಕ್ತಾಯಗೊಂಡ ಖಾತೆ</small>
+                        <h4 class="mb-0 fw-bold">${expiredCount} <small class="fs-8">ಶಾಲೆಗಳು</small></h4>
+                    </div>
+                </div>
+            `;
+
+            // Filter Table Results
+            const filtered = dbKeys.filter(k => 
+                String(k.diseCode || '').toLowerCase().includes(query) ||
+                String(k.schoolName || '').toLowerCase().includes(query) ||
+                String(k.mobile || '').toLowerCase().includes(query) ||
+                String(k.secretKey || '').toLowerCase().includes(query)
+            );
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-muted p-3">ಯಾವುದೇ ಶಾಲೆ ದೊರೆಯಲಿಲ್ಲ.</td></tr>`;
+                return;
+            }
+
+            // Fetch real-time student count and marks status
+            const usageDataPromises = filtered.map(async (k) => {
+                let stCount = k.studentCount || 0;
+                let hasMarks = false;
+
+                try {
+                    const localData = localStorage.getItem(`ksrms_permanent_store_${k.diseCode}`);
+                    if (localData) {
+                        const parsed = JSON.parse(localData);
+                        if (parsed && Array.isArray(parsed.students)) {
+                            stCount = parsed.students.length;
+                            hasMarks = parsed.students.some(s => (s.marks && Object.keys(s.marks).length > 0) || (s.hsMarks && Object.keys(s.hsMarks).length > 0));
+                        }
+                    }
+                } catch(e) {}
+
+                if (db && k.diseCode) {
+                    try {
+                        const sDoc = await db.collection("ksrms_schools").doc(k.diseCode).get();
+                        if (sDoc.exists) {
+                            const sData = sDoc.data();
+                            const stList = Array.isArray(sData.students) ? sData.students : [];
+                            stCount = stList.length;
+                            hasMarks = stList.some(s => (s.marks && Object.keys(s.marks).length > 0) || (s.hsMarks && Object.keys(s.hsMarks).length > 0));
+                        }
+                    } catch(e) {}
+                }
+
+                return { ...k, realStCount: stCount, hasMarksEntered: hasMarks };
+            });
+
+            const enrichedKeys = await Promise.all(usageDataPromises);
+
+            tbody.innerHTML = enrichedKeys.map(k => {
+                const expTime = k.expiresAt ? (typeof k.expiresAt === 'number' ? k.expiresAt : (k.expiresAt.toMillis ? k.expiresAt.toMillis() : Date.now())) : Date.now();
+                const diffDays = Math.ceil((expTime - Date.now()) / (1000 * 60 * 60 * 24));
+                const isActive = diffDays > 0;
+                const isExpiringSoon = diffDays > 0 && diffDays <= 7;
+
+                const stCount = k.realStCount || 0;
+                const hasMarks = k.hasMarksEntered;
+
+                let statusBadgeHtml = `<span class="badge bg-secondary px-2 py-1">⚪ UNUSED</span>`;
+                if (hasMarks) {
+                    statusBadgeHtml = `<span class="badge bg-success px-2 py-1"><i class="fa-solid fa-check-double me-1"></i> 🟢 MARKS ENTERED</span>`;
+                } else if (stCount > 0) {
+                    statusBadgeHtml = `<span class="badge bg-info text-dark px-2 py-1"><i class="fa-solid fa-users me-1"></i> 🔵 STUDENTS ADDED</span>`;
+                }
+
+                const expDateStr = new Date(expTime).toLocaleDateString('en-GB');
+
+                // Expiry Warning Badge
+                let expiryBadgeHtml = `<span class="badge bg-success">${expDateStr}</span>`;
+                if (diffDays <= 0) {
+                    expiryBadgeHtml = `<span class="badge bg-danger">🔴 EXPIRED (${expDateStr})</span>`;
+                } else if (isExpiringSoon) {
+                    expiryBadgeHtml = `<span class="badge bg-warning text-dark">🟡 ${diffDays} ದಿನ ಬಾಕಿ (${expDateStr})</span>`;
+                }
+
+                return `
+                    <tr>
+                        <td class="fw-bold text-primary">${k.diseCode}</td>
+                        <td class="text-start ps-2 fw-semibold">${k.schoolName}</td>
+                        <td>${k.mobile || '-'}</td>
+                        <td class="fw-bold text-danger fs-7">${k.secretKey}</td>
+                        <td class="fw-bold fs-7 ${stCount > 0 ? 'text-primary' : 'text-muted'}">${stCount} ${t('ಮಕ್ಕಳು', 'Students')}</td>
+                        <td>${statusBadgeHtml}</td>
+                        <td>${expiryBadgeHtml}</td>
+                        <td>
+                            <button class="btn btn-xs ${isExpiringSoon || !isActive ? 'btn-warning text-dark fw-bold' : 'btn-outline-secondary'} py-0 px-2 me-1" onclick="sendExpiryReminderWhatsApp('${k.diseCode}', '${k.schoolName}', '${k.secretKey}', '${k.mobile}', '${expDateStr}', ${diffDays})" title="WhatsApp ಗೆ Expiry Reminder Alert ಕಳುಹಿಸಿ">
+                                <i class="fa-bell fa-solid me-1"></i> WA Alert
+                            </button>
+                            <button class="btn btn-xs btn-primary fw-bold py-0 px-2 me-1" onclick="renewSchoolLicense('${k.diseCode}')" title="1 ವರ್ಷಕ್ಕೆ Renew ಮಾಡಿ">
+                                <i class="fa-solid fa-rotate"></i>
+                            </button>
+                            <button class="btn btn-xs btn-outline-warning text-dark fw-bold py-0 px-2 me-1" onclick="changeSchoolMobile('${k.diseCode}')" title="Edit Mobile">
+                                <i class="fa-solid fa-mobile-screen"></i>
+                            </button>
+                            <button class="btn btn-xs btn-outline-danger fw-bold py-0 px-1" onclick="deleteSchoolByAdmin('${k.diseCode}')" title="Delete School">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+        };
         
     </script>
 </body>
