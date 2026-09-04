@@ -18823,6 +18823,155 @@
             };
         })();
     
+
+// ----------------------------------------------------------------------
+        // LIVE REALTIME BROADCAST NOTICE / ANNOUNCEMENT BANNER ENGINE
+        // ----------------------------------------------------------------------
+
+        // 1. Admin Publish / Clear Notice Function
+        async function publishAdminNotice(clear = false) {
+            if (currentSession.role !== 'admin') return alert("Only Master Admin can publish notices!");
+
+            const inputEl = document.getElementById('admNoticeInput');
+            const text = clear ? "" : (inputEl ? inputEl.value.trim() : "");
+
+            if (!clear && !text) {
+                return alert("ದಯವಿಟ್ಟು ಪ್ರಕಟಣೆಯ ಸಂದೇಶವನ್ನು ನಮೂದಿಸಿ!");
+            }
+
+            const noticeObj = {
+                noticeText: text,
+                active: !clear && text.length > 0,
+                updatedAt: Date.now()
+            };
+
+            try {
+                localStorage.setItem('ksrms_notice_cache', JSON.stringify(noticeObj));
+            } catch(e) {}
+
+            if (db) {
+                try {
+                    await db.collection("ksrms_system").doc("broadcast_notice").set(noticeObj);
+                    alert(clear ? "ಪ್ರಕಟಣೆಯನ್ನು ಹಿಂಪಡೆಯಲಾಗಿದೆ." : `ಪ್ರಕಟಣೆ ಯಶಸ್ವಿಯಾಗಿ ಪ್ರಸಾರವಾಗಿದೆ!\n\nಸಂದೇಶ: "${text}"`);
+                } catch(e) {
+                    console.error("Notice publish error:", e);
+                    alert("Cloud Sync error! Notice updated locally.");
+                }
+            } else {
+                alert(clear ? "ಪ್ರಕಟಣೆಯನ್ನು ಹಿಂಪಡೆಯಲಾಗಿದೆ." : "ಪ್ರಕಟಣೆ ಪ್ರಸಾರವಾಗಿದೆ.");
+            }
+
+            renderBroadcastBanner(noticeObj);
+        }
+
+        // 2. Render Live Marquee Banner on Navigation Top Bar
+        function renderBroadcastBanner(noticeObj) {
+            let bannerEl = document.getElementById('ksrmsNoticeBannerBar');
+
+            if (!noticeObj || !noticeObj.active || !noticeObj.noticeText) {
+                if (bannerEl) bannerEl.style.display = 'none';
+                return;
+            }
+
+            if (!bannerEl) {
+                bannerEl = document.createElement('div');
+                bannerEl.id = 'ksrmsNoticeBannerBar';
+                bannerEl.className = 'bg-danger text-white py-1 px-3 d-flex align-items-center shadow-sm border-bottom border-warning no-print';
+                bannerEl.style.fontSize = '0.88rem';
+                
+                const mainNav = document.querySelector('nav');
+                if (mainNav && mainNav.nextSibling) {
+                    mainNav.parentNode.insertBefore(bannerEl, mainNav.nextSibling);
+                } else {
+                    document.body.insertBefore(bannerEl, document.body.firstChild);
+                }
+            }
+
+            bannerEl.style.display = 'flex';
+            bannerEl.innerHTML = `
+                <div class="me-2 fw-bold text-warning text-nowrap d-flex align-items-center">
+                    <i class="fa-solid fa-bullhorn fa-beat me-1"></i>
+                    <span>${t('ಲೈವ್ ಪ್ರಕಟಣೆ:', 'Notice:')}</span>
+                </div>
+                <marquee behavior="scroll" direction="left" scrollamount="6" class="fw-bold mb-0 text-white">
+                    ${noticeObj.noticeText}
+                </marquee>
+            `;
+        }
+
+        // 3. Realtime Cloud Listener for All Schools
+        function subscribeToRealtimeNotices() {
+            try {
+                const cache = localStorage.getItem('ksrms_notice_cache');
+                if (cache) renderBroadcastBanner(JSON.parse(cache));
+            } catch(e) {}
+
+            if (!db) return;
+
+            try {
+                db.collection("ksrms_system").doc("broadcast_notice").onSnapshot((doc) => {
+                    if (doc.exists) {
+                        const noticeData = doc.data();
+                        try {
+                            localStorage.setItem('ksrms_notice_cache', JSON.stringify(noticeData));
+                        } catch(e) {}
+                        renderBroadcastBanner(noticeData);
+
+                        const admInput = document.getElementById('admNoticeInput');
+                        if (admInput && noticeData.noticeText) {
+                            admInput.value = noticeData.noticeText;
+                        }
+                    }
+                }, (err) => console.error("Notice Listener Error:", err));
+            } catch(e) {}
+        }
+
+        // 4. Auto-Inject Broadcast Notice Controls into Master Admin Control Panel
+        (function injectAdminNoticeUI() {
+            function setupAdminNoticeInput() {
+                const adminModalBody = document.querySelector('#adminPanelModal .modal-body');
+                if (adminModalBody && !document.getElementById('admNoticeInputContainer')) {
+                    const noticeSection = document.createElement('div');
+                    noticeSection.id = 'admNoticeInputContainer';
+                    noticeSection.className = 'card border-danger shadow-sm mb-4';
+                    noticeSection.innerHTML = `
+                        <div class="card-header bg-danger text-white fw-bold py-2 fs-7">
+                            <i class="fa-solid fa-bullhorn me-2"></i> 3. ಲೈವ್ ಪ್ರಕಟಣೆ / ನೋಟಿಸ್ ಬೋರ್ಡ್ (Broadcast Notice to All Schools)
+                        </div>
+                        <div class="card-body p-3 bg-light">
+                            <label class="form-label fw-bold text-dark mb-1 fs-8">ಎಲ್ಲಾ ಶಿಕ್ಷಕರ ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ಹರಿಯುವ ಪ್ರಕಟಣೆ ಸಂದೇಶ (Live Marquee Message):</label>
+                            <div class="input-group">
+                                <input type="text" id="admNoticeInput" class="form-control fw-bold border-danger" placeholder="ಉದಾ: MARKS CARD UPDATE ಮಾಡಲಾಗಿದೆ! ಹೊಸ ಪ್ರಗತಿ ಪತ್ರ ಮುದ್ರಿಸಿ...">
+                                <button type="button" class="btn btn-danger fw-bold px-3" onclick="publishAdminNotice(false)">
+                                    <i class="fa-solid fa-paper-plane me-1"></i> ಪ್ರಕಟಿಸಿ
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary fw-bold" onclick="publishAdminNotice(true)" title="ಪ್ರಕಟಣೆ ತೆಗೆದುಹಾಕಿ">
+                                    <i class="fa-solid fa-trash-can"></i> Clear
+                                </button>
+                            </div>
+                            <small class="text-muted d-block mt-1">'ಪ್ರಕಟಿಸಿ' ಕ್ಲಿಕ್ ಮಾಡಿದರೆ ಕರ್ನಾಟಕದ ಎಲ್ಲಾ ಶಾಲೆಗಳ ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ಈ ಸಂದೇಶ ಲೈವ್ ಆಗಿ ಹರಿಯುತ್ತದೆ.</small>
+                        </div>
+                    `;
+                    
+                    const firstHr = adminModalBody.querySelector('hr');
+                    if (firstHr) {
+                        adminModalBody.insertBefore(noticeSection, firstHr);
+                    } else {
+                        adminModalBody.appendChild(noticeSection);
+                    }
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => {
+                    setupAdminNoticeInput();
+                    subscribeToRealtimeNotices();
+                });
+            } else {
+                setupAdminNoticeInput();
+                subscribeToRealtimeNotices();
+            }
+        })();
         
     </script>
 </body>
