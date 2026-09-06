@@ -19565,6 +19565,187 @@
                     </tr>`;
             }).join('');
         };
+
+// ----------------------------------------------------------------------
+        // LIVE SCHOOL DATA COMPLETION AUDIT & 1-CLICK WHATSAPP AUDIT ALERT ENGINE
+        // ----------------------------------------------------------------------
+
+        // 1. Audit Data Completion Status for any class
+        function auditClassDataStatus(className, students) {
+            const clsStudents = students.filter(s => s && String(s.className).trim().toLowerCase() === String(className).trim().toLowerCase());
+            if (clsStudents.length === 0) {
+                return { status: 'NO_STUDENTS', text: '⚪ ಮಕ್ಕಳು ಸೇರ್ಪಡೆಯಾಗಿಲ್ಲ (No Students)', count: 0, pendingSubs: [] };
+            }
+
+            const cat = getClassCategory(className);
+            const isHS = (cat === 'CLASS9' || cat === 'CLASS10');
+            const isLower = className.startsWith('1st') || className.startsWith('2nd') || className.startsWith('3rd') || className.startsWith('4th') || className.startsWith('5th');
+
+            const activeSubKeys = isHS ? ['s1','s2','s3','s4','s5','s6'] : (isLower ? ['s1','s2','s4','s5'] : ['s1','s2','s3','s4','s5','s6','s7']);
+            
+            let subCompletion = {};
+            activeSubKeys.forEach(k => subCompletion[k] = false);
+
+            clsStudents.forEach(s => {
+                activeSubKeys.forEach(k => {
+                    if (isHS) {
+                        if (s.hsMarks && s.hsMarks[k] && Object.keys(s.hsMarks[k]).length > 0) subCompletion[k] = true;
+                    } else {
+                        if (s.marks && s.marks[k] && Object.keys(s.marks[k]).length > 0) subCompletion[k] = true;
+                    }
+                });
+            });
+
+            const completedCount = Object.values(subCompletion).filter(Boolean).length;
+            const totalSubs = activeSubKeys.length;
+
+            if (completedCount === totalSubs) {
+                return { status: 'COMPLETED', text: '🟢 100% ಪೂರ್ಣಗೊಂಡಿದೆ (Completed)', count: clsStudents.length, pendingSubs: [] };
+            } else if (completedCount > 0) {
+                const pendingList = activeSubKeys.filter(k => !subCompletion[k]).map(k => getSubjectLabelWithLanguage(k, k));
+                return { status: 'PARTIAL', text: `🟡 ${completedCount}/${totalSubs} ವಿಷಯಗಳು ಪೂರ್ಣ (${pendingList.length} ಬಾಕಿ)`, count: clsStudents.length, pendingSubs: pendingList };
+            } else {
+                return { status: 'NO_MARKS', text: '🔴 ಅಂಕಗಳ ನಮೂದು ಬಾಕಿ ಇದೆ (Marks Pending)', count: clsStudents.length, pendingSubs: [] };
+            }
+        }
+
+        // 2. Render Audit Checklist Widget on Teacher Dashboard
+        function renderDashboardAuditWidget() {
+            let widgetCard = document.getElementById('dashSchoolAuditWidgetCard');
+            const dashSection = document.getElementById('dashboardSection');
+
+            if (!dashSection) return;
+
+            if (!widgetCard) {
+                widgetCard = document.createElement('div');
+                widgetCard.id = 'dashSchoolAuditWidgetCard';
+                widgetCard.className = 'card border-primary shadow-sm mb-4';
+                
+                const catRow = dashSection.querySelector('.row.mb-4:last-child') || dashSection.firstElementChild;
+                dashSection.insertBefore(widgetCard, catRow);
+            }
+
+            const students = Array.isArray(sampleStudents) ? sampleStudents.filter(s => s && s.className !== "Completed / Alumni") : [];
+            const activeClasses = getClassesInSelectedRange();
+
+            let auditRowsHtml = activeClasses.map(cls => {
+                const audit = auditClassDataStatus(cls, students);
+                let badgeClass = "bg-secondary";
+                if (audit.status === 'COMPLETED') badgeClass = "bg-success";
+                else if (audit.status === 'PARTIAL') badgeClass = "bg-warning text-dark";
+                else if (audit.status === 'NO_MARKS') badgeClass = "bg-danger";
+
+                let pendingDetail = audit.pendingSubs.length > 0 ? `<small class="text-danger fw-bold d-block">ಬಾಕಿ ವಿಷಯಗಳು: ${audit.pendingSubs.join(', ')}</small>` : '';
+
+                return `
+                    <div class="col-md-6 mb-2">
+                        <div class="border rounded p-2 bg-light d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong class="text-dark fs-8">${cls}</strong>
+                                <small class="text-muted d-block">ಒಟ್ಟು ಮಕ್ಕಳು: ${audit.count}</small>
+                                ${pendingDetail}
+                            </div>
+                            <span class="badge ${badgeClass} fs-8">${audit.text}</span>
+                        </div>
+                    </div>`;
+            }).join('');
+
+            widgetCard.innerHTML = `
+                <div class="card-header bg-primary text-white fw-bold d-flex justify-content-between align-items-center py-2 fs-7">
+                    <span><i class="fa-solid fa-clipboard-check me-2 text-warning"></i> ಶಾಲಾ ಅಂಕ ನಮೂದು &amp; ಡೇಟಾ ಪೂರ್ಣತೆಯ ತಪಾಸಣೆ (Data Completion Checklist)</span>
+                    <span class="badge bg-warning text-dark">Realtime Audit</span>
+                </div>
+                <div class="card-body p-3">
+                    <div class="row g-2">${auditRowsHtml}</div>
+                </div>`;
+        }
+
+        // 3. Send 1-Click WhatsApp Data Completion Audit Alert to School Teacher from Admin Panel
+        async function sendAuditReportWhatsApp(dise, schoolName, mobile) {
+            const cleanMob = String(mobile || '').replace(/\D/g, '');
+            let schoolStudents = [];
+
+            if (db && dise) {
+                try {
+                    const sDoc = await db.collection("ksrms_schools").doc(dise).get();
+                    if (sDoc.exists) {
+                        schoolStudents = Array.isArray(sDoc.data().students) ? sDoc.data().students : [];
+                    }
+                } catch(e) {}
+            }
+
+            if (schoolStudents.length === 0) {
+                const localData = localStorage.getItem(`ksrms_permanent_store_${dise}`);
+                if (localData) {
+                    try { schoolStudents = JSON.parse(localData).students || []; } catch(e) {}
+                }
+            }
+
+            const activeClasses = ['1st Standard','2nd Standard','3rd Standard','4th Standard','5th Standard','6th Standard','7th Standard','8th Standard','9th Standard','10th Standard'];
+            let pendingSummary = [];
+
+            activeClasses.forEach(cls => {
+                const audit = auditClassDataStatus(cls, schoolStudents);
+                if (audit.status === 'NO_STUDENTS') {
+                    pendingSummary.push(`• ${cls}: ಮಕ್ಕಳು ಸೇರ್ಪಡೆಯಾಗಿಲ್ಲ`);
+                } else if (audit.status === 'NO_MARKS') {
+                    pendingSummary.push(`• ${cls}: ಅಂಕಗಳ ನಮೂದು ಬಾಕಿಯಿದೆ (${audit.count} ಮಕ್ಕಳು)`);
+                } else if (audit.status === 'PARTIAL') {
+                    pendingSummary.push(`• ${cls}: ${audit.pendingSubs.join(', ')} ವಿಷಯಗಳು ಬಾಕಿಯಿವೆ`);
+                }
+            });
+
+            let msg = `ನಮಸ್ಕಾರ ${schoolName},\n\nನಿಮ್ಮ KSRMS V3.2 ಶಾಲಾ ಡೇಟಾ ಪೂರ್ಣತೆಯ ವರದಿ:\n\n`;
+            if (pendingSummary.length === 0) {
+                msg += `🟢 ಅಭಿನಂದನೆಗಳು! ನಿಮ್ಮ ಶಾಲೆಯ ಎಲ್ಲಾ ತರಗತಿಗಳ ಅಂಕ ನಮೂದು 100% ಪೂರ್ಣಗೊಂಡಿದೆ.\n\nಈಗಲೇ ಪ್ರಗತಿ ಪತ್ರ ಮುದ್ರಿಸಿಕೊಳ್ಳಿ!`;
+            } else {
+                msg += pendingSummary.join('\n') + `\n\nದಯವಿಟ್ಟು ಬಾಕಿ ಇರುವ ಅಂಕಗಳನ್ನು ನಮೂದಿಸಿ ಪ್ರಗತಿ ಪತ್ರಗಳನ್ನು ಮುದ್ರಿಸಿಕೊಳ್ಳಿ.\n\n• ಸಹಾಯಕ್ಕಾಗಿ: 9902090911 (KSRMS Admin)`;
+            }
+
+            const waUrl = cleanMob.length >= 10 ? `https://api.whatsapp.com/send?phone=91${cleanMob.slice(-10)}&text=${encodeURIComponent(msg)}` : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+            window.open(waUrl, '_blank');
+        }
+
+        // Inject [ 📋 Audit WA ] Button in Admin Panel Table
+        const _baseFilterAdminTableAudit = filterAdminKeysTable;
+        filterAdminKeysTable = async function() {
+            if (typeof _baseFilterAdminTableAudit === 'function') {
+                await _baseFilterAdminTableAudit();
+            }
+
+            const tbody = document.getElementById('adminKeysTableBody');
+            if (!tbody) return;
+
+            const rows = tbody.querySelectorAll('tr');
+            rows.forEach(tr => {
+                const diseTd = tr.querySelector('td.text-primary');
+                const actionTd = tr.querySelector('td:last-child');
+                if (diseTd && actionTd && !actionTd.querySelector('.btn-audit-wa')) {
+                    const dise = diseTd.innerText.trim();
+                    const sNameTd = tr.querySelectorAll('td')[1];
+                    const sName = sNameTd ? sNameTd.innerText.trim() : '';
+                    const mobTd = tr.querySelectorAll('td')[2];
+                    const mob = mobTd ? mobTd.innerText.trim() : '';
+
+                    const auditBtn = document.createElement('button');
+                    auditBtn.className = 'btn btn-xs btn-info text-dark fw-bold py-0 px-2 me-1 btn-audit-wa';
+                    auditBtn.title = 'ಶಾಲಾ ಡೇಟಾ ಪೂರ್ಣತೆಯ ವರದಿಯನ್ನು WhatsApp ಕಳುಹಿಸಿ';
+                    auditBtn.onclick = function() { sendAuditReportWhatsApp(dise, sName, mob); };
+                    auditBtn.innerHTML = `<i class="fa-solid fa-clipboard-check"></i> Audit WA`;
+
+                    actionTd.insertBefore(auditBtn, actionTd.firstChild);
+                }
+            });
+        };
+
+        // Auto Refresh Dashboard Audit Checklist Widget
+        const _baseRenderDashFuncAudit = renderDashboardTables;
+        renderDashboardTables = function() {
+            if (typeof _baseRenderDashFuncAudit === 'function') {
+                _baseRenderDashFuncAudit();
+            }
+            renderDashboardAuditWidget();
+        };
         
     </script>
 </body>
