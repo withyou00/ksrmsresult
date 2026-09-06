@@ -19566,7 +19566,247 @@
             }).join('');
         };
 
+// ----------------------------------------------------------------------
+        // OFFICIAL SCHOOL CERTIFICATES GENERATOR (STUDY, CHARACTER, KANNADA & RURAL)
+        // ----------------------------------------------------------------------
+        let activeCertType = 'STUDY'; // STUDY, CHARACTER, KANNADA_MEDIUM, RURAL
 
+        function openCertificateModal() {
+            if (!checkLicensePermission("generate certificates")) return;
+
+            let certModalEl = document.getElementById('ksrmsCertModal');
+            if (!certModalEl) {
+                const modalDiv = document.createElement('div');
+                modalDiv.className = 'modal fade';
+                modalDiv.id = 'ksrmsCertModal';
+                modalDiv.setAttribute('tabindex', '-1');
+                modalDiv.innerHTML = `
+                    <div class="modal-dialog modal-lg modal-dialog-centered">
+                        <div class="modal-content border-primary shadow">
+                            <div class="modal-header bg-primary text-white fw-bold">
+                                <h5 class="modal-title mb-0"><i class="fa-solid fa-file-certificate me-2"></i> ಶಾಲಾ ಅಧಿಕೃತ ಪ್ರಮಾಣ ಪತ್ರ ಜನರೇಟರ್ (School Certificate Generator)</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body p-4 bg-light">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold text-dark mb-1">೧. ವಿದ್ಯಾರ್ಥಿಯನ್ನು ಆಯ್ಕೆ ಮಾಡಿ:</label>
+                                        <select id="certStudentSelect" class="form-select border-primary fw-bold" onchange="onCertStudentChange()"></select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold text-dark mb-1">೨. ಪ್ರಮಾಣ ಪತ್ರದ ಮಾದರಿ (Certificate Type):</label>
+                                        <select id="certTypeSelect" class="form-select border-success fw-bold text-success" onchange="activeCertType=this.value;">
+                                            <option value="STUDY" selected>ಅಧ್ಯಯನ ಪ್ರಮಾಣ ಪತ್ರ (Study Certificate)</option>
+                                            <option value="CHARACTER">ಚಾರಿತ್ರ್ಯ &amp; ನಡತೆ ಪ್ರಮಾಣ ಪತ್ರ (Character Certificate)</option>
+                                            <option value="KANNADA_MEDIUM">ಕನ್ನಡ ಮಾಧ್ಯಮ ಪ್ರಮಾಣ ಪತ್ರ (Kannada Medium)</option>
+                                            <option value="RURAL">ಗ್ರಾಮೀಣ ಅಭ್ಯರ್ಥಿ ಪ್ರಮಾಣ ಪತ್ರ (Rural Candidate)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="card border-0 shadow-sm p-3 mb-3 bg-white">
+                                    <h6 class="fw-bold text-primary border-bottom pb-2 mb-3"><i class="fa-solid fa-calendar-days me-2"></i> ವ್ಯಾಸಂಗ ಮಾಡಿದ ಅವಧಿ &amp; ತರಗತಿ ವಿವರಗಳು (Customise Study History)</h6>
+                                    <div class="row g-3">
+                                        <div class="col-md-3">
+                                            <label class="form-label fw-semibold mb-1 fs-8">ಯಾವ ತರಗತಿಯಿಂದ (From Class):</label>
+                                            <select id="certFromClass" class="form-select form-select-sm fw-bold">
+                                                <option value="1st Standard" selected>1st Standard</option>
+                                                <option value="2nd Standard">2nd Standard</option>
+                                                <option value="3rd Standard">3rd Standard</option>
+                                                <option value="4th Standard">4th Standard</option>
+                                                <option value="5th Standard">5th Standard</option>
+                                                <option value="6th Standard">6th Standard</option>
+                                                <option value="7th Standard">7th Standard</option>
+                                                <option value="8th Standard">8th Standard</option>
+                                                <option value="9th Standard">9th Standard</option>
+                                                <option value="10th Standard">10th Standard</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label fw-semibold mb-1 fs-8">ಯಾವ ತರಗತಿಯವರೆಗೆ (To Class):</label>
+                                            <select id="certToClass" class="form-select form-select-sm fw-bold"></select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label fw-semibold mb-1 fs-8">ಯಾವ ವರ್ಷದಿಂದ (From Year):</label>
+                                            <input type="text" id="certFromYear" class="form-control form-control-sm fw-bold" value="2021-22">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label fw-semibold mb-1 fs-8">ಯಾವ ವರ್ಷದವರೆಗೆ (To Year):</label>
+                                            <input type="text" id="certToYear" class="form-control form-control-sm fw-bold" value="2026-27">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-semibold mb-1 fs-8">ಜಾವಾ/ಉದ್ದೇಶ (Purpose / Ref No):</label>
+                                            <input type="text" id="certPurpose" class="form-control form-control-sm" value="ಉನ್ನತ ಶಿಕ್ಷಣ / ಸ್ಕಾಲರ್‌ಶಿಪ್ / ಸರ್ಕಾರಿ ಸೌಲಭ್ಯಕ್ಕಾಗಿ">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-semibold mb-1 fs-8">ಪ್ರಮಾಣ ಪತ್ರ ನೀಡಿದ ದಿನಾಂಕ (Issue Date):</label>
+                                            <input type="date" id="certIssueDate" class="form-control form-control-sm fw-bold">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="d-grid">
+                                    <button type="button" class="btn btn-success fw-bold py-2" onclick="renderOfficialCertificatePrint()">
+                                        <i class="fa-solid fa-print me-1"></i> ಪ್ರಮಾಣ ಪತ್ರ ಜನರೇಟ್ ಮಾಡಿ &amp; ಪ್ರಿಂಟ್ ಕೊಡಿ (Print Certificate)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.appendChild(modalDiv);
+            }
+
+            // Populate Student Dropdown
+            const stSelect = document.getElementById('certStudentSelect');
+            const toClassSelect = document.getElementById('certToClass');
+            const issueDateInput = document.getElementById('certIssueDate');
+
+            if (issueDateInput && !issueDateInput.value) {
+                issueDateInput.value = new Date().toISOString().split('T')[0];
+            }
+
+            if (stSelect) {
+                stSelect.innerHTML = sampleStudents.map(s => `<option value="${s.id}">${s.name} (${s.className}) - SATS: ${s.sats||'-'}</option>`).join('');
+            }
+
+            if (toClassSelect) {
+                toClassSelect.innerHTML = ALL_CLASSES_LIST.map(c => `<option value="${c}">${c}</option>`).join('');
+            }
+
+            onCertStudentChange();
+
+            const certModal = new bootstrap.Modal(document.getElementById('ksrmsCertModal'));
+            certModal.show();
+        }
+
+        function onCertStudentChange() {
+            const stId = document.getElementById('certStudentSelect')?.value;
+            const st = sampleStudents.find(s => String(s.id) === String(stId));
+            if (!st) return;
+
+            const toClassSelect = document.getElementById('certToClass');
+            if (toClassSelect) toClassSelect.value = st.className;
+
+            // Auto-calculate From/To Academic Years
+            const currentYearStr = appSettings.academicYear || '2026-27';
+            document.getElementById('certToYear').value = currentYearStr;
+
+            const classNum = parseInt(st.className) || 6;
+            const startYear = parseInt(currentYearStr.split('-')[0]) - (classNum - 1);
+            document.getElementById('certFromYear').value = `${startYear}-${String(startYear + 1).slice(-2)}`;
+        }
+
+        function renderOfficialCertificatePrint() {
+            const stId = document.getElementById('certStudentSelect')?.value;
+            const st = sampleStudents.find(s => String(s.id) === String(stId));
+            if (!st) return alert("ವಿದ್ಯಾರ್ಥಿ ವಿವರ ಆಯ್ಕೆ ಮಾಡಿ!");
+
+            const certType = document.getElementById('certTypeSelect').value;
+            const fromClass = document.getElementById('certFromClass').value;
+            const toClass = document.getElementById('certToClass').value;
+            const fromYear = document.getElementById('certFromYear').value;
+            const toYear = document.getElementById('certToYear').value;
+            const purpose = document.getElementById('certPurpose').value;
+            const issueDate = cleanDateFormat(document.getElementById('certIssueDate').value);
+
+            let certTitle = "ಅಧ್ಯಯನ ಪ್ರಮಾಣ ಪತ್ರ (STUDY CERTIFICATE)";
+            let certBodyHtml = "";
+
+            if (certType === 'CHARACTER') {
+                certTitle = "ಚಾರಿತ್ರ್ಯ ಹಾಗೂ ನಡತೆ ಪ್ರಮಾಣ ಪತ್ರ (CHARACTER CERTIFICATE)";
+                certBodyHtml = `
+                    ಈ ಮೂಲಕ ಪ್ರಮಾಣೀಕರಿಸುವುದೇನೆಂದರೆ, ಕುಮಾರ / ಕುಮಾರಿ <strong>${st.name}</strong>, ತಂದೆಯ ಹೆಸರು <strong>${st.father || extractFatherFromFullName(st.name) || '-'}</strong>, ತಾಯಿಯ ಹೆಸರು <strong>${st.mother || '-'}</strong>, ಇವರು ನಮ್ಮ ಶಾಲೆಯಲ್ಲಿ <strong>${fromYear}</strong> ನೇ ಶೈಕ್ಷಣಿಕ ಸಾಲಿನ <strong>${fromClass}</strong> ಯಿಂದ <strong>${toYear}</strong> ನೇ ಶೈಕ್ಷಣಿಕ ಸಾಲಿನ <strong>${toClass}</strong> ಯವರೆಗೆ ಕ್ರಮಬದ್ಧವಾಗಿ ವ್ಯಾಸಂಗ ಮಾಡಿರುತ್ತಾರೆ.<br><br>
+                    ಶಾಲೆಯ ದಾಖಲಾತಿ ಪುಸ್ತಕ ಹಾಗೂ ಶಿಸ್ತಿನ ಪ್ರಕಾರ ವಿದ್ಯಾರ್ಥಿಯ ಚಾರಿತ್ರ್ಯ ಹಾಗೂ ನಡತೆಯು <strong>ಉತ್ತಮವಾಗಿದೆ (GOOD)</strong> ಎಂದು ಪ್ರಮಾಣೀಕರಿಸಲಾಗಿದೆ.`;
+            } else if (certType === 'KANNADA_MEDIUM') {
+                certTitle = "ಕನ್ನಡ ಮಾಧ್ಯಮ ಪ್ರಮಾಣ ಪತ್ರ (KANNADA MEDIUM CERTIFICATE)";
+                certBodyHtml = `
+                    ಈ ಮೂಲಕ ಪ್ರಮಾಣೀಕರಿಸುವುದೇನೆಂದರೆ, ವಿದ್ಯಾರ್ಥಿ <strong>${st.name}</strong>, ತಂದೆಯ ಹೆಸರು <strong>${st.father || extractFatherFromFullName(st.name) || '-'}</strong>, ಇವರು ನಮ್ಮ ಶಾಲೆಯಲ್ಲಿ <strong>${fromYear}</strong> ನೇ ಶೈಕ್ಷಣಿಕ ಸಾಲಿನ <strong>${fromClass}</strong> ಯಿಂದ <strong>${toYear}</strong> ನೇ ಶೈಕ್ಷಣಿಕ ಸಾಲಿನ <strong>${toClass}</strong> ಯವರೆಗೆ <strong>ಸಂಪೂರ್ಣವಾಗಿ ಕನ್ನಡ ಮಾಧ್ಯಮದಲ್ಲಿಯೇ (Kannada Medium)</strong> ವ್ಯಾಸಂಗ ಮಾಡಿರುತ್ತಾರೆ ಎಂದು ಪ್ರಮಾಣೀಕರಿಸಲಾಗಿದೆ.`;
+            } else if (certType === 'RURAL') {
+                certTitle = "ಗ್ರಾಮೀಣ ಅಭ್ಯರ್ಥಿ ಪ್ರಮಾಣ ಪತ್ರ (RURAL CANDIDATE CERTIFICATE)";
+                certBodyHtml = `
+                    ಈ ಮೂಲಕ ಪ್ರಮಾಣೀಕರಿಸುವುದೇನೆಂದರೆ, ವಿದ್ಯಾರ್ಥಿ <strong>${st.name}</strong>, ತಂದೆಯ ಹೆಸರು <strong>${st.father || extractFatherFromFullName(st.name) || '-'}</strong>, ಇವರು ನಮ್ಮ ಶಾಲೆಯಲ್ಲಿ <strong>${fromYear}</strong> ನೇ ಸಾಲಿನ <strong>${fromClass}</strong> ಯಿಂದ <strong>${toYear}</strong> ನೇ ಸಾಲಿನ <strong>${toClass}</strong> ಯವರೆಗೆ ವ್ಯಾಸಂಗ ಮಾಡಿದ ಅವಧಿಯಲ್ಲಿ, ನಮ್ಮ ಶಾಲೆಯು <strong>ಗ್ರಾಮೀಣ ಪ್ರದೇಶದ ವ್ಯಾಪ್ತಿಗೆ (Rural Area)</strong> ಸೇರಿರುತ್ತದೆ ಎಂದು ಪ್ರಮಾಣೀಕರಿಸಲಾಗಿದೆ.`;
+            } else {
+                certTitle = "ಅಧ್ಯಯನ ಪ್ರಮಾಣ ಪತ್ರ (STUDY CERTIFICATE)";
+                certBodyHtml = `
+                    ಈ ಮೂಲಕ ಪ್ರಮಾಣೀಕರಿಸುವುದೇನೆಂದರೆ, ಕುಮಾರ / ಕುಮಾರಿ <strong>${st.name}</strong>, ತಂದೆಯ ಹೆಸರು <strong>${st.father || extractFatherFromFullName(st.name) || '-'}</strong>, ತಾಯಿಯ ಹೆಸರು <strong>${st.mother || '-'}</strong>, ಇವರು ನಮ್ಮ ಶಾಲೆಯಲ್ಲಿ <strong>${fromYear}</strong> ನೇ ಶೈಕ್ಷಣಿಕ ಸಾಲಿನ <strong>${fromClass}</strong> ಯಿಂದ <strong>${toYear}</strong> ನೇ ಶೈಕ್ಷಣಿಕ ಸಾಲಿನ <strong>${toClass}</strong> ಯವರೆಗೆ ಕ್ರಮಬದ್ಧವಾಗಿ ವ್ಯಾಸಂಗ ಮಾಡಿರುತ್ತಾರೆ.<br><br>
+                    ಶಾಲೆಯ ದಾಖಲಾತಿ ಪುಸ್ತಕದ ಪ್ರಕಾರ ವಿದ್ಯಾರ್ಥಿಯ ಸತ್ಸ (SATS) ಸಂಖ್ಯೆ: <strong>${st.sats || '-'}</strong>, ಜನನ ದಿನಾಂಕ: <strong>${cleanDateFormat(st.dob)}</strong> ಹಾಗೂ ವಿದ್ಯಾರ್ಥಿಯ ನಡತೆಯು ಉತ್ತಮವಾಗಿದೆ.`;
+            }
+
+            document.getElementById('dynamicPageStyle').innerHTML = `@page { size: A4 portrait; margin: 5mm; }`;
+
+            const container = document.getElementById('printContainer');
+            container.innerHTML = `
+                <div class="card-border-box p-4 text-start my-2" style="font-family:'Anek Kannada', sans-serif; min-height: 255mm; border: 3px double #800020; display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div class="text-center border-bottom pb-3 mb-4">
+                            <div class="report-header-title1 fs-6">ಕ್ಷೇತ್ರ ಶಿಕ್ಷಣಾಧಿಕಾರಿಗಳ ಕಾರ್ಯಾಲಯ ${appSettings.block}</div>
+                            <div class="report-school-name fs-3 my-1 fw-bold text-primary">${appSettings.schoolName}</div>
+                            <div class="fs-8 fw-bold text-muted">ಡೈಸ್ ಕೋಡ್: ${appSettings.diseCode} | ಕ್ಲಸ್ಟರ್: ${appSettings.cluster} | ಜಿಲ್ಲೆ: ${appSettings.district}</div>
+                            <div class="badge bg-danger text-white fs-6 px-4 py-2 mt-3">${certTitle}</div>
+                        </div>
+
+                        <div class="d-flex justify-content-between fs-8 fw-bold mb-4 px-2">
+                            <span>ಕ್ರ.ಸಂ / ಜಾವಾ ಸಂಖ್ಯೆ: KSRMS/CERT/${Date.now().toString().slice(-4)}</span>
+                            <span>ದಿನಾಂಕ: ${issueDate}</span>
+                        </div>
+
+                        <div class="p-3 bg-light rounded border mb-4 fs-7 text-dark" style="line-height: 2.1; text-align: justify; word-spacing: 2px;">
+                            ${certBodyHtml}
+                        </div>
+
+                        <div class="row g-2 fs-8 bg-white p-3 rounded border mb-4">
+                            <div class="col-6"><strong>ವಿದ್ಯಾರ್ಥಿಯ ಹೆಸರು:</strong> ${st.name}</div>
+                            <div class="col-6"><strong>SATS ID:</strong> ${st.sats || '-'}</div>
+                            <div class="col-6"><strong>ಜನನ ದಿನಾಂಕ:</strong> ${cleanDateFormat(st.dob)}</div>
+                            <div class="col-6"><strong>ದಾಖಲಾತಿ ಸಂಖ್ಯೆ:</strong> ${st.admissionNo || '-'}</div>
+                            <div class="col-6"><strong>PEN ID:</strong> ${st.pen || '-'}</div>
+                            <div class="col-6"><strong>ಉದ್ದೇಶ:</strong> ${purpose}</div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between pt-5 mt-4 fs-8 fw-bold align-items-end">
+                        <div class="text-center">
+                            <div class="seal-circle-placeholder mx-auto mb-2" style="width:65px; height:65px; font-size:0.6rem;"><span>School Seal</span></div>
+                            <div>ಶಾಲಾ ಮೊಹರು</div>
+                        </div>
+                        <div class="text-center">
+                            ${appSettings.hmSigUrl ? `<img src="${appSettings.hmSigUrl}" class="sig-preview mb-1" style="max-height:45px;">` : '<div>______________________</div>'}
+                            <div class="text-dark fs-7 fw-bold">${appSettings.hmName}</div>
+                            <div>ಮುಖ್ಯೋಪಾಧ್ಯಾಯರ ಸಹಿ &amp; ಮೊಹರು</div>
+                            <small class="text-muted">${appSettings.schoolName}</small>
+                        </div>
+                    </div>
+                </div>`;
+
+            // Close modal & switch to print view
+            const modalEl = bootstrap.Modal.getInstance(document.getElementById('ksrmsCertModal'));
+            if (modalEl) modalEl.hide();
+
+            showSection('reportsSection');
+            container.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Inject Certificate Button into Reports Section
+        (function injectCertButtonInReports() {
+            function addCertBtn() {
+                const rptBtnRow = document.querySelector('#reportsSection .card-body .row.g-2');
+                if (rptBtnRow && !document.getElementById('btnOpenCertModal')) {
+                    const colDiv = document.createElement('div');
+                    colDiv.className = 'col-md-3 mt-2';
+                    colDiv.innerHTML = `
+                        <button id="btnOpenCertModal" class="btn btn-primary w-100 fw-bold py-2 fs-8 shadow-sm" onclick="openCertificateModal()">
+                            <i class="fa-solid fa-file-certificate me-1"></i> 📜 ಪ್ರಮಾಣ ಪತ್ರಗಳ ಜನರೇಟರ್
+                        </button>`;
+                    rptBtnRow.appendChild(colDiv);
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', addCertBtn);
+            } else {
+                addCertBtn();
+            }
+        })();
         
     </script>
 </body>
