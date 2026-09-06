@@ -19566,7 +19566,155 @@
             }).join('');
         };
 
+// ----------------------------------------------------------------------
+        // 1-CLICK OFFICIAL STUDY & CONDUCT CERTIFICATE GENERATOR ENGINE
+        // ----------------------------------------------------------------------
+        function renderStudyCertificate() {
+            if (!checkLicensePermission("generate study certificate")) return;
 
+            const selectedClass = getActiveReportClass();
+            const dropdown = document.getElementById('rptStudentSelect');
+            const stId = dropdown ? dropdown.value : null;
+            let st = sampleStudents.find(s => String(s.id) === String(stId)) || sampleStudents.find(s => s.className === selectedClass);
+
+            if (!st) {
+                return alert(t('ದಯವಿಟ್ಟು ಪ್ರಮಾಣ ಪತ್ರ ನೀಡಲು ವಿದ್ಯಾರ್ಥಿಯನ್ನು ಆಯ್ಕೆ ಮಾಡಿ!', 'Please select a student to generate certificate!'));
+            }
+
+            const ctName = getCurrentClassTeacherName(st.className, 'A');
+            const hmName = appSettings.hmName || 'ಮುಖ್ಯೋಪಾಧ್ಯಾಯರು';
+            const hmSig = appSettings.hmSigUrl || '';
+            const todayStr = new Date().toLocaleDateString('en-GB');
+
+            const isGirl = String(st.gender).toLowerCase().includes('girl') || String(st.gender).includes('ಹೆಣ್ಣು');
+            const pronounKn = isGirl ? 'ಕುಮಾರಿ' : 'ಕುಮಾರ';
+            const pronounEn = isGirl ? 'Kumari' : 'Master';
+
+            const fatherName = st.father || extractFatherFromFullName(st.name) || '-';
+            const motherName = st.mother || '-';
+            const dobStr = cleanDateFormat(st.dob);
+
+            document.getElementById('dynamicPageStyle').innerHTML = `@page { size: A4 portrait !important; margin: 5mm !important; }`;
+
+            const container = document.getElementById('printContainer');
+            if (!container) return;
+
+            container.innerHTML = `
+                <div class="p-4 bg-white mx-auto shadow-sm" id="studyCertPaper" style="width: 100%; max-width: 195mm; min-height: 265mm; border: 3px double #800020; border-radius: 8px; font-family: 'Anek Kannada', 'Poppins', sans-serif; box-sizing: border-box; position: relative;">
+                    
+                    <!-- Certificate Header -->
+                    <div class="text-center border-bottom border-danger pb-3 mb-4">
+                        <div class="fw-bold fs-6 text-dark">${t('ಕರ್ನಾಟಕ ಸರ್ಕಾರ - ಸಾರ್ವಜನಿಕ ಶಿಕ್ಷಣ ಇಲಾಖೆ', 'Govt of Karnataka - Department of Public Instruction')}</div>
+                        <div class="fw-bold text-muted fs-7">${t(`ಕ್ಷೇತ್ರ ಶಿಕ್ಷಣಾಧಿಕಾರಿಗಳ ಕಾರ್ಯಾಲಯ ${appSettings.block}`, `Office of the Block Education Officer ${appSettings.block}`)}</div>
+                        <div class="report-school-name fs-2 fw-bold text-primary my-2">${appSettings.schoolName}</div>
+                        <div class="d-flex justify-content-between align-items-center fs-8 fw-bold text-secondary px-3">
+                            <span>${t('ಡೈಸ್ ಕೋಡ್:', 'DISE Code:')} ${appSettings.diseCode}</span>
+                            <span>${t('ಕ್ಲಸ್ಟರ್:', 'Cluster:')} ${appSettings.cluster}</span>
+                            <span>${t('ಬ್ಲಾಕ್/ಜಿಲ್ಲೆ:', 'Block/Dist:')} ${appSettings.block}, ${appSettings.district}</span>
+                        </div>
+                    </div>
+
+                    <!-- Certificate Title Badge -->
+                    <div class="text-center my-4">
+                        <div class="d-inline-block border border-2 border-danger rounded-pill px-4 py-2 bg-danger bg-opacity-10">
+                            <h3 class="fw-bold text-danger mb-0 title-kn">${t('ಅಧ್ಯಯನ ಹಾಗೂ ನಡತೆ ಪ್ರಮಾಣ ಪತ್ರ', 'STUDY AND CONDUCT CERTIFICATE')}</h3>
+                        </div>
+                    </div>
+
+                    <!-- Certificate Declaration Text -->
+                    <div class="fs-6 text-dark my-4 px-3" style="line-height: 2.2 !important; text-align: justify; text-justify: inter-word;">
+                        ${t(
+                            `ಈ ಮೂಲಕ ಪ್ರಮಾಣೀಕರಿಸುವುದೇನೆಂದರೆ, <b>${pronounKn} ${st.name}</b>, ತಂದೆಯ ಹೆಸರು <b>${fatherName}</b>, ತಾಯಿಯ ಹೆಸರು <b>${motherName}</b> ಇವರು ನಮ್ಮ ಶಾಲೆಯಲ್ಲಿ <b>${st.className}</b> ತರಗತಿಯಲ್ಲಿ <b>${appSettings.academicYear}</b> ನೇ ಶೈಕ್ಷಣಿಕ ಸಾಲಿನಲ್ಲಿ ನಿಯಮಿತವಾಗಿ ಅಧ್ಯಯನ ಮಾಡಿರುತ್ತಾರೆ / ಮಾಡುತ್ತಿದ್ದಾರೆ.`,
+                            `This is to certify that <b>${pronounEn} ${st.name}</b>, Son/Daughter of Sri <b>${fatherName}</b> and Smt <b>${motherName}</b> is/was a bonafide student of our school studying in <b>${st.className}</b> during the academic year <b>${appSettings.academicYear}</b>.`
+                        )}
+                    </div>
+
+                    <!-- Student Official Details Table -->
+                    <div class="my-4 px-3">
+                        <table class="table table-bordered table-sm align-middle fs-7">
+                            <tbody>
+                                <tr>
+                                    <th class="bg-light" style="width: 35%;">${t('SATS ID ಸಂಖ್ಯೆ:', 'SATS ID Number:')}</th>
+                                    <td class="fw-bold text-primary">${st.sats || '-'}</td>
+                                    <th class="bg-light" style="width: 25%;">${t('ದಾಖಲಾತಿ ಸಂಖ್ಯೆ:', 'Admission No:')}</th>
+                                    <td class="fw-bold">${st.admissionNo || '-'}</td>
+                                </tr>
+                                <tr>
+                                    <th class="bg-light">${t('ಜನನ ದಿನಾಂಕ (DOB):', 'Date of Birth (DOB):')}</th>
+                                    <td class="fw-bold">${dobStr}</td>
+                                    <th class="bg-light">${t('ಲಿಂಗ (Gender):', 'Gender:')}</th>
+                                    <td class="fw-bold">${st.gender === 'Boy' ? t('ಗಂಡು', 'Male') : st.gender === 'Girl' ? t('ಹೆಣ್ಣು', 'Female') : '-'}</td>
+                                </tr>
+                                <tr>
+                                    <th class="bg-light">${t('PEN ID ಸಂಖ್ಯೆ:', 'PEN ID Number:')}</th>
+                                    <td class="fw-bold">${st.pen || '-'}</td>
+                                    <th class="bg-light">${t('APAAR ID ಸಂಖ್ಯೆ:', 'APAAR ID Number:')}</th>
+                                    <td class="fw-bold">${st.apaarId || st.apaar || '-'}</td>
+                                </tr>
+                                <tr>
+                                    <th class="bg-light">${t('ಸಾಮಾಜಿಕ ವರ್ಗ &amp; ಜಾತಿ:', 'Category &amp; Caste:')}</th>
+                                    <td colspan="3" class="fw-bold">${st.casteCat || '-'}${st.casteName ? ` (${st.casteName})` : ''}</td>
+                                </tr>
+                                <tr>
+                                    <th class="bg-light">${t('ನಡತೆ (Conduct &amp; Character):', 'Conduct &amp; Character:')}</th>
+                                    <td colspan="3" class="fw-bold text-success fs-6"><i class="fa-solid fa-star text-warning me-1"></i> ${t('ಉತ್ತಮವಾಗಿದೆ (GOOD)', 'GOOD / SATISFACTORY')}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- School Records Declaration -->
+                    <div class="fs-8 text-muted my-3 px-3">
+                        ${t('ಶಾಲೆಯ ಸಾಮಾನ್ಯ ದಾಖಲಾತಿ ರಜಿಸ್ಟರ್ (General Admission Register) ಪ್ರಕಾರ ಈ ಮೇಲಿನ ವಿವರಗಳನ್ನು ದೃಢೀಕರಿಸಿ ನೀಡಲಾಗಿದೆ.', 'This certificate is issued based on the official records maintained in the School General Admission Register.')}
+                    </div>
+
+                    <!-- Footer & Signatures -->
+                    <div class="d-flex justify-content-between align-items-end pt-5 mt-5 px-3 fs-8 fw-bold" style="position: absolute; bottom: 30px; left: 15px; right: 15px;">
+                        <div class="text-start">
+                            <div><b>${t('ದಿನಾಂಕ:', 'Date:')}</b> ${todayStr}</div>
+                            <div><b>${t('ಸ್ಥಳ:', 'Place:')}</b> ${appSettings.block}</div>
+                        </div>
+                        <div class="text-center">
+                            <div>${hmSig ? `<img src="${hmSig}" class="sig-preview mb-1">` : ''}</div>
+                            <div class="seal-circle-placeholder mb-1"><span>School Seal</span></div>
+                            <div class="fw-bold text-dark fs-7">${hmName}</div>
+                            <div>${t('ಮುಖ್ಯೋಪಾಧ್ಯಾಯರ ಸಹಿ &amp; ಮೊಹರು', 'Headmaster Signature &amp; Seal')}</div>
+                            <small class="text-muted d-block">${appSettings.schoolName}</small>
+                        </div>
+                    </div>
+                </div>`;
+
+            document.querySelectorAll('.content-section').forEach(sec => sec.classList.add('d-none'));
+            document.getElementById('reportsSection').classList.remove('d-none');
+            
+            document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+            const rptNavBtn = document.querySelectorAll('.nav-tab-btn')[4];
+            if (rptNavBtn) rptNavBtn.classList.add('active');
+
+            if (container) container.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Auto-inject [ 📜 ಅಧ್ಯಯನ ಪ್ರಮಾಣ ಪತ್ರ ] Button into Reports Toolbar
+        (function injectStudyCertButton() {
+            function addBtn() {
+                const btnContainer = document.querySelector('#reportsSection .row.g-2');
+                if (btnContainer && !document.getElementById('btnRptStudyCert')) {
+                    const colDiv = document.createElement('div');
+                    colDiv.className = 'col-md-3 mt-2';
+                    colDiv.innerHTML = `
+                        <button id="btnRptStudyCert" class="btn btn-primary w-100 fw-bold py-2 fs-8 shadow-sm" onclick="renderStudyCertificate()">
+                            <i class="fa-solid fa-scroll me-1"></i> ${t('ಅಧ್ಯಯನ ಪ್ರಮಾಣ ಪತ್ರ', 'Study Certificate')}
+                        </button>`;
+                    btnContainer.appendChild(colDiv);
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', addBtn);
+            } else {
+                addBtn();
+            }
+        })();
         
     </script>
 </body>
