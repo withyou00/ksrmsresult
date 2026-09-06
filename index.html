@@ -19567,98 +19567,272 @@
         };
 
 // ----------------------------------------------------------------------
-        // KARNATAKA STATE OFFICIAL TRANSFER CERTIFICATE (TC) GENERATOR ENGINE
+        // TC GENERATOR CLICK FIX + FATHER & MOTHER AADHAAR NUMBERS
         // ----------------------------------------------------------------------
 
-        // Helper: Convert Date of Birth to Words
+        // Helper: Convert DOB to Words
         function convertDobToWords(dobStr) {
-            if (!dobStr || dobStr === '-') return '';
-            const clean = cleanDateFormat(dobStr);
-            const parts = clean.split('-');
-            if (parts.length !== 3) return '';
+            if (!dobStr || dobStr === '-') return '-';
+            try {
+                const clean = typeof cleanDateFormat === 'function' ? cleanDateFormat(dobStr) : dobStr;
+                const parts = clean.split('-');
+                if (parts.length !== 3) return dobStr;
 
-            const y = parseInt(parts[0]);
-            const m = parseInt(parts[1]);
-            const d = parseInt(parts[2]);
+                const y = parseInt(parts[0]);
+                const m = parseInt(parts[1]);
+                const d = parseInt(parts[2]);
 
-            const monthsKn = ['', 'ಜನವರಿ', 'ಫೆಬ್ರವರಿ', 'ಮಾರ್ಚ್', 'ಏಪ್ರಿಲ್', 'ಮೇ', 'ಜೂನ್', 'ಜುಲೈ', 'ಆಗಸ್ಟ್', 'ಸೆಪ್ಟೆಂಬರ್', 'ಅಕ್ಟೋಬರ್', 'ನವೆಂಬರ್', 'ಡಿಸೆಂಬರ್'];
-            const monthName = monthsKn[m] || '';
-            return `${d} - ${monthName} - ${y}`;
+                const monthsKn = ['', 'ಜನವರಿ', 'ಫೆಬ್ರವರಿ', 'ಮಾರ್ಚ್', 'ಏಪ್ರಿಲ್', 'ಮೇ', 'ಜೂನ್', 'ಜುಲೈ', 'ಆಗಸ್ಟ್', 'ಸೆಪ್ಟೆಂಬರ್', 'ಅಕ್ಟೋಬರ್', 'ನವೆಂಬರ್', 'ಡಿಸೆಂಬರ್'];
+                const monthName = monthsKn[m] || '';
+                return `${d} - ${monthName} - ${y}`;
+            } catch(e) {
+                return dobStr;
+            }
         }
 
-        // Open TC Generator Modal
-        function openTcGeneratorModal(stId = null) {
-            if (!checkLicensePermission("generate transfer certificate")) return;
-
-            let tcModal = document.getElementById('tcGeneratorModal');
-            if (!tcModal) {
-                injectTcModalHTML();
-                tcModal = document.getElementById('tcGeneratorModal');
-            }
-
-            const modalInst = new bootstrap.Modal(tcModal);
-
+        // Auto-fill student data into TC Form (including Father & Mother Aadhaar)
+        loadTcFormData = function() {
             const stSelect = document.getElementById('tcStSelect');
-            if (stSelect) {
-                const currentClass = getActiveReportClass();
-                const classStudents = sampleStudents.filter(s => s.className === currentClass);
-                stSelect.innerHTML = classStudents.map(s => `<option value="${s.id}">${s.name} (Adm: ${s.admissionNo||'-'})</option>`).join('');
-                if (stId) stSelect.value = stId;
-            }
-
-            loadTcFormData();
-            modalInst.show();
-        }
-
-        // Auto-fill student data into TC Form
-        function loadTcFormData() {
-            const stId = document.getElementById('tcStSelect')?.value;
+            const stId = stSelect ? stSelect.value : null;
             const st = sampleStudents.find(s => String(s.id) === String(stId)) || sampleStudents[0];
             if (!st) return;
 
-            if (document.getElementById('tcNo')) document.getElementById('tcNo').value = st.tcNo || Math.floor(1 + Math.random() * 50);
-            if (document.getElementById('tcYear')) document.getElementById('tcYear').value = appSettings.academicYear || '2025-26';
-            if (document.getElementById('tcSchoolName')) document.getElementById('tcSchoolName').value = appSettings.schoolName || '';
-            if (document.getElementById('tcAdmNo')) document.getElementById('tcAdmNo').value = st.admissionNo || '';
-            if (document.getElementById('tcCumulativeNo')) document.getElementById('tcCumulativeNo').value = st.cumulativeNo || '-';
-            if (document.getElementById('tcStName')) document.getElementById('tcStName').value = st.name || '';
-            if (document.getElementById('tcBirthPlace')) document.getElementById('tcBirthPlace').value = st.birthPlace || appSettings.cluster || '';
-            if (document.getElementById('tcTaluk')) document.getElementById('tcTaluk').value = appSettings.block || '';
-            if (document.getElementById('tcDistrict')) document.getElementById('tcDistrict').value = appSettings.district || '';
-            if (document.getElementById('tcState')) document.getElementById('tcState').value = 'ಕರ್ನಾಟಕ / KARNATAKA';
-            if (document.getElementById('tcGender')) document.getElementById('tcGender').value = st.gender === 'Boy' ? 'ಗಂಡು / BOY' : st.gender === 'Girl' ? 'ಹೆಣ್ಣು / GIRL' : '';
-            if (document.getElementById('tcNationality')) document.getElementById('tcNationality').value = 'ಭಾರತೀಯ / INDIAN';
-            if (document.getElementById('tcReligion')) document.getElementById('tcReligion').value = st.religion || 'ಹಿಂದೂ';
-            if (document.getElementById('tcCaste')) document.getElementById('tcCaste').value = st.casteName || 'ಸಾಮಾನ್ಯ';
-            if (document.getElementById('tcSubCaste')) document.getElementById('tcSubCaste').value = st.subCaste || '-';
-            if (document.getElementById('tcCasteCat')) document.getElementById('tcCasteCat').value = st.casteCat || 'General';
-            if (document.getElementById('tcFatherName')) document.getElementById('tcFatherName').value = st.father || extractFatherFromFullName(st.name) || '';
-            if (document.getElementById('tcMotherName')) document.getElementById('tcMotherName').value = st.mother || '';
-            if (document.getElementById('tcIsScSt')) document.getElementById('tcIsScSt').value = (st.casteCat === 'SC' || st.casteCat === 'ST') ? st.casteCat : 'No / ಇಲ್ಲ';
-            if (document.getElementById('tcIsQualified')) document.getElementById('tcIsQualified').value = 'Yes - ಅರ್ಹರಾಗಿದ್ದಾರೆ / Qualified';
-            if (document.getElementById('tcDobFigures')) document.getElementById('tcDobFigures').value = cleanDateFormat(st.dob);
-            if (document.getElementById('tcDobWords')) document.getElementById('tcDobWords').value = convertDobToWords(st.dob);
-            if (document.getElementById('tcClassLeft')) document.getElementById('tcClassLeft').value = st.className || '';
-            if (document.getElementById('tcMedium')) document.getElementById('tcMedium').value = 'ಕನ್ನಡ / KANNADA';
-            if (document.getElementById('tcAdmDate')) document.getElementById('tcAdmDate').value = st.admDate || '10-04-2025';
-            if (document.getElementById('tcDuesPaid')) document.getElementById('tcDuesPaid').value = 'Yes - ಪಾವತಿಸಲಾಗಿದೆ / Paid';
-            if (document.getElementById('tcConcession')) document.getElementById('tcConcession').value = 'No / ಇಲ್ಲ';
-            if (document.getElementById('tcScholarship')) document.getElementById('tcScholarship').value = 'No / ಇಲ್ಲ';
-            if (document.getElementById('tcMedicalExam')) document.getElementById('tcMedicalExam').value = 'Yes / ಮಾಡಲಾಗಿದೆ';
-            if (document.getElementById('tcLastAttDate')) document.getElementById('tcLastAttDate').value = st.lastAttDate || '10-04-2026';
-            if (document.getElementById('tcAppDate')) document.getElementById('tcAppDate').value = st.appDate || '20-04-2026';
-            if (document.getElementById('tcIssueDate')) document.getElementById('tcIssueDate').value = st.issueDate || '21-04-2026';
-            if (document.getElementById('tcTotalDays')) document.getElementById('tcTotalDays').value = appSettings.totalWorkingDays || 239;
-            if (document.getElementById('tcAttDays')) document.getElementById('tcAttDays').value = st.co?.attDays || 205;
-            if (document.getElementById('tcCharacter')) document.getElementById('tcCharacter').value = 'ಉತ್ತಮ / GOOD';
-            if (document.getElementById('tcSatsNo')) document.getElementById('tcSatsNo').value = st.sats || '';
-            if (document.getElementById('tcPenNo')) document.getElementById('tcPenNo').value = st.pen || '';
-            if (document.getElementById('tcApaarNo')) document.getElementById('tcApaarNo').value = st.apaarId || st.apaar || '';
-            if (document.getElementById('tcAadhaarNo')) document.getElementById('tcAadhaarNo').value = st.stAadhaar || '';
-        }
+            const setVal = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.value = (val !== undefined && val !== null) ? val : '';
+            };
 
-        // Dynamically Inject TC Edit Modal into DOM
-        function injectTcModalHTML() {
+            setVal('tcNo', st.tcNo || Math.floor(1 + Math.random() * 50));
+            setVal('tcYear', appSettings.academicYear || '2025-26');
+            setVal('tcSchoolName', appSettings.schoolName || '');
+            setVal('tcAdmNo', st.admissionNo || '-');
+            setVal('tcCumulativeNo', st.cumulativeNo || '-');
+            setVal('tcStName', st.name || '');
+            setVal('tcBirthPlace', st.birthPlace || appSettings.cluster || '');
+            setVal('tcTaluk', appSettings.block || '');
+            setVal('tcDistrict', appSettings.district || '');
+            setVal('tcState', 'ಕರ್ನಾಟಕ / KARNATAKA');
+            setVal('tcGender', st.gender === 'Boy' ? 'ಗಂಡು / BOY' : st.gender === 'Girl' ? 'ಹೆಣ್ಣು / GIRL' : '-');
+            setVal('tcNationality', 'ಭಾರತೀಯ / INDIAN');
+            setVal('tcReligion', st.religion || 'ಹಿಂದೂ');
+            setVal('tcCaste', st.casteName || 'ಸಾಮಾನ್ಯ');
+            setVal('tcSubCaste', st.subCaste || '-');
+            setVal('tcCasteCat', st.casteCat || 'General');
+            setVal('tcFatherName', st.father || extractFatherFromFullName(st.name) || '-');
+            setVal('tcMotherName', st.mother || '-');
+            setVal('tcIsScSt', (st.casteCat === 'SC' || st.casteCat === 'ST') ? st.casteCat : 'No / ಇಲ್ಲ');
+            setVal('tcIsQualified', 'Yes - ಅರ್ಹರಾಗಿದ್ದಾರೆ / Qualified');
+            setVal('tcDobFigures', typeof cleanDateFormat === 'function' ? cleanDateFormat(st.dob) : (st.dob||'-'));
+            setVal('tcDobWords', convertDobToWords(st.dob));
+            setVal('tcClassLeft', st.className || '');
+            setVal('tcMedium', 'ಕನ್ನಡ / KANNADA');
+            setVal('tcAdmDate', st.admDate || '10-04-2025');
+            setVal('tcDuesPaid', 'Yes - ಪಾವತಿಸಲಾಗಿದೆ / Paid');
+            setVal('tcConcession', 'No / ಇಲ್ಲ');
+            setVal('tcScholarship', 'No / ಇಲ್ಲ');
+            setVal('tcMedicalExam', 'Yes / ಮಾಡಲಾಗಿದೆ');
+            setVal('tcLastAttDate', st.lastAttDate || '10-04-2026');
+            setVal('tcAppDate', st.appDate || '20-04-2026');
+            setVal('tcIssueDate', st.issueDate || '21-04-2026');
+            setVal('tcTotalDays', appSettings.totalWorkingDays || 239);
+            setVal('tcAttDays', st.co?.attDays || 205);
+            setVal('tcCharacter', 'ಉತ್ತಮ / GOOD');
+            setVal('tcSatsNo', st.sats || '-');
+            setVal('tcPenNo', st.pen || '-');
+            setVal('tcApaarNo', st.apaarId || st.apaar || '-');
+            setVal('tcAadhaarNo', st.stAadhaar || '-');
+            setVal('tcFatherAadhaarNo', st.fatherAadhaar || '-'); // Father Aadhaar
+            setVal('tcMotherAadhaarNo', st.motherAadhaar || '-'); // Mother Aadhaar
+        };
+
+        // Generate Official TC Layout & Preview Print
+        generateTransferCertificatePrint = function() {
+            const getVal = (id) => (document.getElementById(id)?.value || '-');
+
+            const data = {
+                tcNo: getVal('tcNo'),
+                tcYear: getVal('tcYear'),
+                schoolName: getVal('tcSchoolName'),
+                admNo: getVal('tcAdmNo'),
+                cumNo: getVal('tcCumulativeNo'),
+                stName: getVal('tcStName'),
+                birthPlace: getVal('tcBirthPlace'),
+                taluk: getVal('tcTaluk'),
+                district: getVal('tcDistrict'),
+                state: getVal('tcState'),
+                gender: getVal('tcGender'),
+                nationality: getVal('tcNationality'),
+                religion: getVal('tcReligion'),
+                caste: getVal('tcCaste'),
+                subCaste: getVal('tcSubCaste'),
+                casteCat: getVal('tcCasteCat'),
+                fatherName: getVal('tcFatherName'),
+                motherName: getVal('tcMotherName'),
+                isScSt: getVal('tcIsScSt'),
+                isQualified: getVal('tcIsQualified'),
+                dobFig: getVal('tcDobFigures'),
+                dobWords: getVal('tcDobWords'),
+                classLeft: getVal('tcClassLeft'),
+                medium: getVal('tcMedium'),
+                admDate: getVal('tcAdmDate'),
+                duesPaid: getVal('tcDuesPaid'),
+                concession: getVal('tcConcession'),
+                scholarship: getVal('tcScholarship'),
+                medicalExam: getVal('tcMedicalExam'),
+                lastAttDate: getVal('tcLastAttDate'),
+                appDate: getVal('tcAppDate'),
+                issueDate: getVal('tcIssueDate'),
+                totDays: getVal('tcTotalDays'),
+                attDays: getVal('tcAttDays'),
+                character: getVal('tcCharacter'),
+                satsNo: getVal('tcSatsNo'),
+                penNo: getVal('tcPenNo'),
+                apaarNo: getVal('tcApaarNo'),
+                aadhaarNo: getVal('tcAadhaarNo'),
+                fatherAadhaarNo: getVal('tcFatherAadhaarNo'), // Father Aadhaar
+                motherAadhaarNo: getVal('tcMotherAadhaarNo')  // Mother Aadhaar
+            };
+
+            const hmName = appSettings.hmName || '';
+            const hmSig = appSettings.hmSigUrl || '';
+
+            document.getElementById('dynamicPageStyle').innerHTML = `@page { size: A4 portrait !important; margin: 3mm 4mm !important; }`;
+
+            const tcHtml = `
+                <div class="official-tc-paper p-3 border border-2 border-dark" id="officialTcPrintCard" style="font-family:'Anek Kannada', 'Poppins', sans-serif; background:#fff; max-width:195mm; margin:0 auto; box-sizing:border-box;">
+                    <div class="text-center border-bottom border-2 border-dark pb-2 mb-2">
+                        <div class="fw-bold fs-7">EDUCATION DEPARTMENT - KARNATAKA STATE</div>
+                        <div class="fw-bold fs-5 text-uppercase report-header-title1">TRANSFER CERTIFICATE / ವರ್ಗಾವಣೆ ಪ್ರಮಾಣ ಪತ್ರ</div>
+                        <div class="d-flex justify-content-between px-3 fw-bold fs-8 mt-1">
+                            <span>(PRIMARY / HIGH / HIGHER SECONDARY SCHOOL)</span>
+                            <span>TC No: <span class="text-danger fs-6">${data.tcNo}</span> / ${data.tcYear}</span>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-bordered border-dark table-sm align-middle fs-8 mb-2" style="font-size: 0.76rem !important;">
+                            <tbody>
+                                <tr>
+                                    <td colspan="2"><strong>1. Name of School / ಶಾಲೆಯ ಹೆಸರು:</strong><br><span class="fw-bold text-primary fs-7">${data.schoolName}</span></td>
+                                    <td><strong>2. Admission No. / ಪ್ರವೇಶ ಸಂಖ್ಯೆ:</strong><br><span class="fw-bold fs-7">${data.admNo}</span></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="3"><strong>3. Cumulative Record No. / ಕ್ಯುಮುಲೇಟಿವ್ ರೆಕಾರ್ಡ್ ನಂ.:</strong> ${data.cumNo}</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="3"><strong>4. Name of Pupil in Full / ವಿದ್ಯಾರ್ಥಿಯ ಪೂರ್ಣ ಹೆಸರು:</strong><br><span class="fw-bold text-primary fs-6">${data.stName}</span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>5. Place of Birth / ಹುಟ್ಟಿದ ಸ್ಥಳ:</strong> ${data.birthPlace}</td>
+                                    <td><strong>6. Taluk / ತಾಲೂಕು:</strong> ${data.taluk}</td>
+                                    <td><strong>7. District / ಜಿಲ್ಲೆ:</strong> ${data.district}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>8. State / ರಾಜ್ಯ:</strong> ${data.state}</td>
+                                    <td><strong>9. Sex / ಲಿಂಗ:</strong> ${data.gender}</td>
+                                    <td><strong>10. Nationality / ರಾಷ್ಟ್ರೀಯತೆ:</strong> ${data.nationality}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>11. Religion / ಧರ್ಮ:</strong> ${data.religion}</td>
+                                    <td><strong>12. Caste / ಜಾತಿ:</strong> ${data.caste}</td>
+                                    <td><strong>13. Sub Caste / ಉಪಜಾತಿ:</strong> ${data.subCaste}</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2"><strong>14. Name of Father / ತಂದೆಯ ಹೆಸರು:</strong><br><span class="fw-bold">${data.fatherName}</span></td>
+                                    <td><strong>15. Name of Mother / ತಾಯಿಯ ಹೆಸರು:</strong><br><span class="fw-bold">${data.motherName}</span></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2"><strong>16. Belongs to SC / ST? / ಪ.ಜಾ / ಪ.ಪಂಗಡಕ್ಕೆ ಸೇರಿದವನೇ?:</strong> ${data.isScSt}</td>
+                                    <td><strong>17. Qualified for Promotion? / ತೇರ್ಗಡೆಯಾಗಿದ್ದಾನೆಯೇ?:</strong><br><span class="fw-bold text-success">${data.isQualified}</span></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="3">
+                                        <strong>18. Date of Birth / ಹುಟ್ಟಿದ ದಿನಾಂಕ:</strong><br>
+                                        (In Figures): <span class="fw-bold fs-7 me-3">${data.dobFig}</span>
+                                        (In Words): <span class="fw-bold fs-7 text-primary">${data.dobWords}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2"><strong>19. Standard reading at time of leaving / ಓದುತ್ತಿದ್ದ ತರಗತಿ:</strong><br><span class="fw-bold fs-7">${data.classLeft}</span></td>
+                                    <td><strong>20. Medium of Instruction / ಬೋಧನಾ ಮಾಧ್ಯಮ:</strong> ${data.medium}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>21. Date of Admission / ತರಗತಿಗೆ ಪ್ರವೇಶ ದಿನಾಂಕ:</strong> ${data.admDate}</td>
+                                    <td><strong>22. Fees Dues Paid? / ಶುಲ್ಕ ಬಾಕಿಯಿದೆಯೇ?:</strong> ${data.duesPaid}</td>
+                                    <td><strong>23. Fee Concession / ಶುಲ್ಕ ವಿನಾಯಿತಿ:</strong> ${data.concession}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>24. Scholarship if any / ವಿದ್ಯಾರ್ಥಿ ವೇತನ:</strong> ${data.scholarship}</td>
+                                    <td colspan="2"><strong>25. Medical Examined? / ವೈದ್ಯಕೀಯ ಪರೀಕ್ಷೆ:</strong> ${data.medicalExam}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>26. Last Attendance Date / ಹಾಜರಿದ್ದ ಕೊನೆಯ ದಿನಾಂಕ:</strong> ${data.lastAttDate}</td>
+                                    <td><strong>27. TC Application Date / ಕೋರಿ ಬಂದ ದಿನಾಂಕ:</strong> ${data.appDate}</td>
+                                    <td><strong>28. Issue Date of TC / ನೀಡಿದ ದಿನಾಂಕ:</strong> ${data.issueDate}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>29. Total Working Days / ಒಟ್ಟು ದಿನಗಳು:</strong> ${data.totDays}</td>
+                                    <td><strong>30. Days Attended / ಹಾಜರಿದ್ದ ದಿನಗಳು:</strong> ${data.attDays}</td>
+                                    <td><strong>31. Character &amp; Conduct / ನಡತೆ:</strong> <span class="fw-bold text-success">${data.character}</span></td>
+                                </tr>
+                                <tr class="table-warning">
+                                    <td><strong>32. SATS No / ಎಸ್.ಟಿ.ಎಸ್ ನಂ.:</strong><br><span class="fw-bold text-dark fs-7">${data.satsNo}</span></td>
+                                    <td><strong>33. PEN ID Number / PEN No:</strong><br><span class="fw-bold text-primary fs-7">${data.penNo}</span></td>
+                                    <td><strong>34. APAAR ID Number / APAAR No:</strong><br><span class="fw-bold text-danger fs-7">${data.apaarNo}</span></td>
+                                </tr>
+                                <tr class="table-light">
+                                    <td><strong>35. Student Aadhaar / ವಿದ್ಯಾರ್ಥಿ ಆಧಾರ್:</strong><br><span class="fw-bold">${data.aadhaarNo}</span></td>
+                                    <td><strong>36. Father Aadhaar / ತಂದೆಯ ಆಧಾರ್:</strong><br><span class="fw-bold">${data.fatherAadhaarNo}</span></td>
+                                    <td><strong>37. Mother Aadhaar / ತಾಯಿಯ ಆಧಾರ್:</strong><br><span class="fw-bold">${data.motherAadhaarNo}</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-end pt-3 mt-2 border-top border-dark fs-8 fw-bold">
+                        <div class="text-center">
+                            <small class="d-block text-muted mb-4">ಪಾಲಕರ ಸಹಿ / Parent Signature</small>
+                            <div>________________________</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="d-flex flex-column align-items-center mb-1">
+                                ${hmSig ? `<img src="${hmSig}" style="max-height:35px;" class="mb-1">` : ''}
+                                <div class="seal-circle-placeholder" style="width:36px; height:36px; font-size:0.45rem;"><span>School Seal</span></div>
+                                <small class="fw-bold text-dark mt-1">${hmName}</small>
+                            </div>
+                            <div>________________________</div>
+                            <div>Signature of Head of Institution / ಮುಖ್ಯೋಪಾಧ್ಯಾಯರ ಸಹಿ &amp; ಮೊಹರು</div>
+                        </div>
+                    </div>
+                </div>`;
+
+            const printCont = document.getElementById('printContainer');
+            if (printCont) {
+                printCont.innerHTML = tcHtml;
+            }
+
+            // Safely close Modal
+            const tcModalEl = document.getElementById('tcGeneratorModal');
+            if (tcModalEl) {
+                try {
+                    const mInst = bootstrap.Modal.getInstance(tcModalEl) || new bootstrap.Modal(tcModalEl);
+                    if (mInst) mInst.hide();
+                } catch(e) {}
+            }
+
+            // Switch to Reports Section & Scroll to Preview
+            document.querySelectorAll('.content-section').forEach(sec => sec.classList.add('d-none'));
+            const rptSec = document.getElementById('reportsSection');
+            if (rptSec) rptSec.classList.remove('d-none');
+            
+            if (printCont) printCont.scrollIntoView({ behavior: 'smooth' });
+        };
+
+        // Re-inject TC Modal HTML with Father & Mother Aadhaar input fields
+        injectTcModalHTML = function() {
+            const existingModal = document.getElementById('tcGeneratorModal');
+            if (existingModal) existingModal.remove();
+
             const modalDiv = document.createElement('div');
             modalDiv.className = 'modal fade';
             modalDiv.id = 'tcGeneratorModal';
@@ -19726,7 +19900,10 @@
                                 <div class="col-md-3 bg-warning bg-opacity-25 p-1 border rounded"><label class="fw-bold text-dark">32. SATS No (ಎಸ್.ಟಿ.ಎಸ್ നಂ)</label><input type="text" id="tcSatsNo" class="form-control form-control-sm fw-bold"></div>
                                 <div class="col-md-3 bg-info bg-opacity-25 p-1 border rounded"><label class="fw-bold text-primary">33. PEN ID Number</label><input type="text" id="tcPenNo" class="form-control form-control-sm fw-bold"></div>
                                 <div class="col-md-3 bg-danger bg-opacity-25 p-1 border rounded"><label class="fw-bold text-danger">34. APAAR ID Number</label><input type="text" id="tcApaarNo" class="form-control form-control-sm fw-bold"></div>
-                                <div class="col-md-3 p-1 border rounded"><label class="fw-bold">35. Aadhaar No</label><input type="text" id="tcAadhaarNo" class="form-control form-control-sm"></div>
+                                <div class="col-md-3 p-1 border rounded"><label class="fw-bold">35. Student Aadhaar</label><input type="text" id="tcAadhaarNo" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-6 p-1 border rounded"><label class="fw-bold text-primary">36. Father Aadhaar No (ತಂದೆಯ ಆಧಾರ್)</label><input type="text" id="tcFatherAadhaarNo" class="form-control form-control-sm"></div>
+                                <div class="col-md-6 p-1 border rounded"><label class="fw-bold text-primary">37. Mother Aadhaar No (ತಾಯಿಯ ಆಧಾರ್)</label><input type="text" id="tcMotherAadhaarNo" class="form-control form-control-sm"></div>
                             </div>
                         </div>
                         <div class="modal-footer py-1">
@@ -19738,29 +19915,7 @@
                     </div>
                 </div>`;
             document.body.appendChild(modalDiv);
-        }
-
-        // Auto-Inject TC Button into Reports Section
-        (function injectTcButtonInReports() {
-            function setupBtn() {
-                const rptRow = document.querySelector('#reportsSection .row.g-2');
-                if (rptRow && !document.getElementById('btnOpenTcGen')) {
-                    const colDiv = document.createElement('div');
-                    colDiv.className = 'col-md-2 mt-2';
-                    colDiv.innerHTML = `
-                        <button class="btn btn-primary w-100 fw-bold py-2 fs-8 shadow-sm" id="btnOpenTcGen" onclick="openTcGeneratorModal()">
-                            <i class="fa-solid fa-file-contract me-1"></i> TC Generator (ವರ್ಗಾವಣೆ ಪತ್ರ)
-                        </button>`;
-                    rptRow.appendChild(colDiv);
-                }
-            }
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', setupBtn);
-            } else {
-                setupBtn();
-            }
-        })();
+        };
         
     </script>
 </body>
