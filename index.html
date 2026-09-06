@@ -19567,6 +19567,700 @@
         };
 
 
+<!-- 4. TRANSFER CERTIFICATE (TC) WORKSPACE VIEW -->
+    <section id="view-tc" class="hidden space-y-6">
+      
+      <!-- TC Header Card -->
+      <div class="card-modern p-5 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-3xl">
+        <div class="flex items-center space-x-3">
+          <div class="h-12 w-12 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center font-black text-2xl shadow-lg">
+            <i class="fa-solid fa-graduation-cap"></i>
+          </div>
+          <div>
+            <h2 class="text-base sm:text-lg font-black tracking-tight">ವರ್ಗಾವಣೆ ಪ್ರಮಾಣ ಪತ್ರ (Transfer Certificate - TC Generator)</h2>
+            <p class="text-xs text-slate-300 font-medium">ಕರ್ನಾಟಕ ಶಾಲಾ ಶಿಕ್ಷಣ ಇಲಾಖೆಯ ಅಧಿಕೃತ ನಮೂನೆ &bull; Auto-fill, Live Edit & Single A4 Print</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="fillDemoTCData()" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs shadow transition flex items-center gap-1.5 cursor-pointer">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> <span>ಮಾದರಿ ಮಾಹಿತಿ ಭರ್ತಿ (Demo Auto-Fill)</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- TC INPUT FORM -->
+        <div class="lg:col-span-5 card-modern p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+            <h3 class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-file-pen text-indigo-600"></i>
+              <span>ವಿದ್ಯಾರ್ಥಿಯ ವಿವರಗಳು (TC Data Entry)</span>
+            </h3>
+            <span class="text-[10px] bg-indigo-100 text-indigo-900 font-bold px-2 py-0.5 rounded-full">KSRMS Official</span>
+          </div>
+
+          <form id="form-tc-generator" onsubmit="generateTransferCertificatePreview(event)" class="space-y-3 text-xs">
+            
+            <div class="p-2.5 bg-slate-50 border rounded-2xl space-y-2">
+              <label class="font-bold text-slate-800 block">ಶಾಲೆಯ ಹೆಸರು & TC ಸಂಖ್ಯೆ</label>
+              <input type="text" id="tc-school-name" required placeholder="ಶಾಲೆಯ ಹೆಸರು" class="w-full p-2 border rounded-xl font-bold bg-white" />
+              <div class="grid grid-cols-2 gap-2">
+                <input type="text" id="tc-number" placeholder="TC No. (e.g. 10)" class="p-2 border rounded-xl font-bold bg-white" />
+                <input type="text" id="tc-school-dise" placeholder="DISE ಕೋಡ್ (e.g. 2901...)" class="p-2 border rounded-xl font-bold bg-white" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">ಪ್ರವೇಶ ಸಂಖ್ಯೆ (Admission No)</label>
+                <input type="text" id="tc-admission-no" required placeholder="08/2025-26" class="w-full p-2 border rounded-xl font-bold bg-slate-50" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">ಕ್ಯುಮುಲೇಟಿವ್ ರೆಕಾರ್ಡ್ ನಂ.</label>
+                <input type="text" id="tc-cumulative-no" placeholder="Cumulative No." class="w-full p-2 border rounded-xl font-bold bg-slate-50" />
+              </div>
+            </div>
+
+            <!-- Student Name -->
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">4. ವಿದ್ಯಾರ್ಥಿಯ ಪೂರ್ಣ ಹೆಸರು *</label>
+              <input type="text" id="tc-student-name" required placeholder="e.g. ಅನಿತಾ ಸುರೇಶ ಕರಲಿಗುದ್ದಿ" class="w-full p-2.5 bg-slate-50 border rounded-xl font-black text-slate-900" />
+            </div>
+
+            <!-- Parents -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">14. ತಂದೆಯ ಹೆಸರು *</label>
+                <input type="text" id="tc-father-name" required placeholder="ಸುರೇಶ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">15. ತಾಯಿಯ ಹೆಸರು *</label>
+                <input type="text" id="tc-mother-name" required placeholder="ಗಂಗವ್ವ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+            </div>
+
+            <!-- Birth Details -->
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">5. ಹುಟ್ಟಿದ ಸ್ಥಳ</label>
+                <input type="text" id="tc-birth-place" placeholder="ಗ್ರಾಮ/ಪಟ್ಟಣ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">6. ತಾಲೂಕು</label>
+                <input type="text" id="tc-taluk" placeholder="ತಾಲೂಕು" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">7. ಜಿಲ್ಲೆ</label>
+                <input type="text" id="tc-district" value="ಬೆಳಗಾವಿ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">8. ರಾಜ್ಯ</label>
+                <input type="text" id="tc-state" value="ಕರ್ನಾಟಕ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">9. ಲಿಂಗ</label>
+                <select id="tc-gender" class="w-full p-2 bg-slate-50 border rounded-xl font-bold">
+                  <option value="ಹೆಣ್ಣು">ಹೆಣ್ಣು</option>
+                  <option value="ಗಂಡು">ಗಂಡು</option>
+                  <option value="ಇತರ">ಇತರ</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">10. ರಾಷ್ಟ್ರೀಯತೆ</label>
+                <input type="text" id="tc-nationality" value="ಭಾರತೀಯ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+            </div>
+
+            <!-- Religion, Caste -->
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">12. ಧರ್ಮ</label>
+                <input type="text" id="tc-religion" value="ಹಿಂದೂ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">11. ಜಾತಿ</label>
+                <input type="text" id="tc-caste" placeholder="ನಾಯಕ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">16. SC/ST ವರ್ಗ</label>
+                <input type="text" id="tc-sc-st" placeholder="ST" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+            </div>
+
+            <!-- DOB -->
+            <div class="p-2.5 bg-indigo-50/50 border border-indigo-200 rounded-2xl space-y-2">
+              <label class="block font-bold text-indigo-950">18. ಹುಟ್ಟಿದ ದಿನಾಂಕ (ಅಂಕಿ ಮತ್ತು ಅಕ್ಷರಗಳಲ್ಲಿ) *</label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input type="text" id="tc-dob-figures" oninput="autoConvertDOBToWords(this.value)" required placeholder="12-04-2013" class="p-2 bg-white border rounded-xl font-black text-slate-900" />
+                <input type="text" id="tc-dob-words" required placeholder="ಹನ್ನೆರಡು ಏಪ್ರಿಲ್ ಎರಡು ಸಾವಿರದ ಹದಿಮೂರು" class="p-2 bg-white border rounded-xl font-bold text-slate-900" />
+              </div>
+            </div>
+
+            <!-- Class & Medium -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">19. ಓದುತ್ತಿದ್ದ ತರಗತಿ (ಪದಗಳಲ್ಲಿ)</label>
+                <input type="text" id="tc-class-leaving" value="6ನೇ ವರ್ಗ ಪಾಸ್" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">21. ಬೋಧನಾ ಮಾಧ್ಯಮ</label>
+                <input type="text" id="tc-medium" value="ಕನ್ನಡ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">17. ಮುಂದಿನ ತರಗತಿಗೆ ಉತ್ತೀರ್ಣಗೊಳಿಸಲು ಅರ್ಹನಾಗಿದ್ದಾನೆಯೇ?</label>
+              <select id="tc-qualified-promotion" class="w-full p-2 bg-slate-50 border rounded-xl font-bold">
+                <option value="ಹೌದು">ಹೌದು</option>
+                <option value="ಇಲ್ಲ">ಇಲ್ಲ</option>
+              </select>
+            </div>
+
+            <!-- Dates -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">22. ಶಾಲೆಗೆ ಪ್ರವೇಶ ಪಡೆದ ದಿನಾಂಕ</label>
+                <input type="text" id="tc-date-admission" value="10-06-2020" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">27. ಶಾಲೆಗೆ ಕೊನೆಗೆ ಹಾಜರಾದ ದಿನಾಂಕ</label>
+                <input type="text" id="tc-last-attendance-date" value="10-04-2026" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">28. TC ಅರ್ಜಿ ಸ್ವೀಕರಿಸಿದ ದಿನಾಂಕ</label>
+                <input type="text" id="tc-application-date" value="20-06-2026" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">29. TC ನೀಡಿದ ದಿನಾಂಕ</label>
+                <input type="text" id="tc-issue-date" value="21-06-2026" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+            </div>
+
+            <!-- Attendance -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">30. ಶಾಲೆಯ ಒಟ್ಟು ಕೆಲಸದ ದಿನಗಳು</label>
+                <input type="number" id="tc-total-working-days" value="230" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">31. ವಿದ್ಯಾರ್ಥಿ ಹಾಜರಾದ ದಿನಗಳು</label>
+                <input type="number" id="tc-attended-days" value="182" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">32. ಶೀಲ ಮತ್ತು ಚಾರಿತ್ರ್ಯ</label>
+              <input type="text" id="tc-character" value="ಉತ್ತಮ" class="w-full p-2 bg-slate-50 border rounded-xl font-bold" />
+            </div>
+
+            <!-- 🌟 IDS: STS, AADHAR, FATHER AADHAR, MOTHER AADHAR, PEN, APAAR -->
+            <div class="p-3 bg-emerald-50/70 border border-emerald-300 rounded-2xl space-y-2">
+              <label class="block font-black text-emerald-950">ಗುರುತಿನ ಸಂಖ್ಯೆಗಳು (IDs & Aadhar Numbers)</label>
+              
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="font-bold text-[11px] text-slate-700 block">33. STS No</label>
+                  <input type="text" id="tc-sts-no" placeholder="203778556" class="w-full p-1.5 bg-white border rounded-lg font-bold" />
+                </div>
+                <div>
+                  <label class="font-bold text-[11px] text-slate-700 block">34. ವಿದ್ಯಾರ್ಥಿ ಆಧಾರ (Aadhar)</label>
+                  <input type="text" id="tc-student-aadhar" placeholder="xxxx xxxx xxxx" class="w-full p-1.5 bg-white border rounded-lg font-bold" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="font-bold text-[11px] text-slate-700 block">👨 ತಂದೆಯ ಆಧಾರ್ ನಂಬರ್</label>
+                  <input type="text" id="tc-father-aadhar" placeholder="xxxx xxxx xxxx" class="w-full p-1.5 bg-white border rounded-lg font-bold" />
+                </div>
+                <div>
+                  <label class="font-bold text-[11px] text-slate-700 block">👩 ತಾಯಿಯ ಆಧಾರ್ ನಂಬರ್</label>
+                  <input type="text" id="tc-mother-aadhar" placeholder="xxxx xxxx xxxx" class="w-full p-1.5 bg-white border rounded-lg font-bold" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="font-bold text-[11px] text-slate-700 block">🆔 PEN No</label>
+                  <input type="text" id="tc-pen-no" placeholder="20605065440" class="w-full p-1.5 bg-white border rounded-lg font-bold" />
+                </div>
+                <div>
+                  <label class="font-bold text-[11px] text-slate-700 block">🪪 APAAR ID</label>
+                  <input type="text" id="tc-apaar-id" placeholder="APAAR ID No." class="w-full p-1.5 bg-white border rounded-lg font-bold" />
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" class="w-full py-3 btn-emerald-gradient text-white font-extrabold rounded-2xl shadow-lg flex items-center justify-center gap-2 text-sm cursor-pointer">
+              <i class="fa-solid fa-eye text-amber-300"></i>
+              <span>TC ಪ್ರಿವ್ಯೂ ವೀಕ್ಷಿಸಿ & ಸಿದ್ಧಪಡಿಸಿ (Preview TC)</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- TC PREVIEW & PRINT VIEW -->
+        <div class="lg:col-span-7 space-y-4">
+          <div class="card-modern p-4 bg-white border flex items-center justify-between no-print">
+            <div class="flex items-center space-x-2">
+              <span class="p-2 bg-indigo-100 text-indigo-900 rounded-xl font-bold"><i class="fa-solid fa-print"></i></span>
+              <span class="font-black text-xs text-slate-800">ಅಧಿಕೃತ A4 ಪ್ರಿಂಟ್ ಪ್ರಿವ್ಯೂ</span>
+            </div>
+            <button onclick="printTransferCertificateDirect()" class="px-5 py-2.5 btn-primary-gradient text-white font-black rounded-xl text-xs shadow flex items-center gap-2 cursor-pointer">
+              <i class="fa-solid fa-print text-amber-300"></i> <span>TC ಮುದ್ರಿಸಿ (Print A4)</span>
+            </button>
+          </div>
+
+          <!-- TC Sheet Paper Container -->
+          <div id="tc-print-output-container" class="p-2 sm:p-4 bg-slate-100 rounded-3xl border shadow-inner">
+            <div id="rendered-tc-sheet"></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+        /* ==========================================================================
+       🎓 OFFICIAL KARNATAKA EDUCATION DEPARTMENT TRANSFER CERTIFICATE (TC) ENGINE
+       ========================================================================== */
+
+    // Top Navigation ಬಾರ್‌ನಲ್ಲಿ TC ಬಟನ್ ಸೇರ್ಪಡೆ
+    (function injectTCButtonInTopNavbar() {
+      const origUpdateNavbar = window.updateTopNavbarClean;
+      window.updateTopNavbarClean = function() {
+        if (typeof origUpdateNavbar === 'function') origUpdateNavbar();
+
+        const navContainer = document.getElementById('top-nav-actions-container');
+        if (navContainer && !document.getElementById('nav-btn-tc')) {
+          const tcBtn = document.createElement('button');
+          tcBtn.id = 'nav-btn-tc';
+          tcBtn.type = 'button';
+          tcBtn.className = 'px-3 py-1.5 rounded-xl font-black text-amber-950 bg-amber-400 hover:bg-amber-500 shadow flex items-center gap-1.5 text-xs transition cursor-pointer';
+          tcBtn.innerHTML = '<i class="fa-solid fa-graduation-cap"></i> <span>TC ಜನರೇಟರ್</span>';
+          tcBtn.onclick = () => navigateToSection('tc');
+          navContainer.appendChild(tcBtn);
+        }
+      };
+      if (typeof updateTopNavbarClean === 'function') updateTopNavbarClean();
+    })();
+
+    // View Router ನಲ್ಲಿ TC ಸಪೋರ್ಟ್
+    const origNavSection = window.navigateToSection;
+    window.navigateToSection = function(section) {
+      ['dashboard', 'generator', 'admin', 'tc'].forEach(function(v) {
+        const el = document.getElementById('view-' + v);
+        if (el) el.classList.add('hidden');
+      });
+
+      if (section === 'tc') {
+        const tcView = document.getElementById('view-tc');
+        if (tcView) tcView.classList.remove('hidden');
+        fillDefaultTCSchoolData();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
+      if (typeof origNavSection === 'function') {
+        origNavSection(section);
+      }
+    };
+
+    // ಶಾಲೆಯ ವಿವರಗಳನ್ನು ಆಟೋ-ಫಿಲ್ ಮಾಡುವುದು
+    function fillDefaultTCSchoolData() {
+      const schInput = document.getElementById('tc-school-name');
+      const diseInput = document.getElementById('tc-school-dise');
+      
+      const teacher = JSON.parse(localStorage.getItem('withyou_logged_teacher') || 'null');
+      const school = JSON.parse(localStorage.getItem('withyou_logged_school') || 'null');
+
+      if (schInput) {
+        if (teacher && teacher.school) schInput.value = teacher.school;
+        else if (school && school.name) schInput.value = school.name;
+        else if (!schInput.value) schInput.value = "ಸರ್ಕಾರಿ ಕನ್ನಡ ಹಿರಿಯ ಪ್ರಾಥಮಿಕ ಶಾಲೆ, ನಿದ್ರೆಗೋಳ್ಳಿ";
+      }
+
+      if (diseInput && school && school.dise) {
+        diseInput.value = school.dise;
+      }
+    }
+
+    // ಮಾದರಿ ಡೇಟಾ ಭರ್ತಿ (Demo Data Fill)
+    window.fillDemoTCData = function() {
+      document.getElementById('tc-number').value = "10";
+      document.getElementById('tc-school-name').value = "ಸರ್ಕಾರಿ ಕನ್ನಡ ಹಿರಿಯ ಪ್ರಾಥಮಿಕ ಶಾಲೆ, ನಿದ್ರೆಗೋಳ್ಳಿ";
+      document.getElementById('tc-admission-no').value = "08 / 2025-26";
+      document.getElementById('tc-cumulative-no').value = "CR-1042";
+      document.getElementById('tc-student-name').value = "ಅನಿತಾ ಸುರೇಶ ಕರಲಿಗುದ್ದಿ";
+      document.getElementById('tc-father-name').value = "ಸುರೇಶ";
+      document.getElementById('tc-mother-name').value = "ಗಂಗವ್ವ";
+      document.getElementById('tc-birth-place').value = "ನಿದ್ರೆಗೋಳ್ಳಿ";
+      document.getElementById('tc-taluk').value = "ಹುಕ್ಕೇರಿ";
+      document.getElementById('tc-district').value = "ಬೆಳಗಾವಿ";
+      document.getElementById('tc-state').value = "ಕರ್ನಾಟಕ";
+      document.getElementById('tc-gender').value = "ಹೆಣ್ಣು";
+      document.getElementById('tc-nationality').value = "ಭಾರತೀಯ";
+      document.getElementById('tc-religion').value = "ಹಿಂದೂ";
+      document.getElementById('tc-caste').value = "ನಾಯಕ";
+      document.getElementById('tc-sc-st').value = "ST";
+      document.getElementById('tc-dob-figures').value = "12-04-2013";
+      document.getElementById('tc-dob-words').value = "ಹನ್ನೆರಡು ಏಪ್ರಿಲ್ ಎರಡು ಸಾವಿರದ ಹದಿಮೂರು";
+      document.getElementById('tc-class-leaving').value = "6 ನೇ ವರ್ಗ ಪಾಸ್";
+      document.getElementById('tc-medium').value = "ಕನ್ನಡ";
+      document.getElementById('tc-qualified-promotion').value = "ಹೌದು";
+      document.getElementById('tc-date-admission').value = "10-06-2020";
+      document.getElementById('tc-last-attendance-date').value = "10-04-2026";
+      document.getElementById('tc-application-date').value = "20-06-2026";
+      document.getElementById('tc-issue-date').value = "21-06-2026";
+      document.getElementById('tc-total-working-days').value = "230";
+      document.getElementById('tc-attended-days').value = "182";
+      document.getElementById('tc-character').value = "ಉತ್ತಮ";
+
+      document.getElementById('tc-sts-no').value = "203778556";
+      document.getElementById('tc-student-aadhar').value = "xxxx xxxx 4892";
+      document.getElementById('tc-father-aadhar').value = "xxxx xxxx 7810";
+      document.getElementById('tc-mother-aadhar').value = "xxxx xxxx 9123";
+      document.getElementById('tc-pen-no').value = "20605065440";
+      document.getElementById('tc-apaar-id').value = "9823 4512 0019";
+
+      generateTransferCertificatePreview();
+      showToast('🎉 ಮಾದರಿ TC ವಿವರಗಳನ್ನು ಭರ್ತಿ ಮಾಡಲಾಗಿದೆ!', 'success');
+    };
+
+    // ದಿನಾಂಕದಿಂದ ಅಕ್ಷರಗಳಿಗೆ ಸ್ವಯಂ-ಪರಿವರ್ತನೆ
+    window.autoConvertDOBToWords = function(dateStr) {
+      if (!dateStr || !dateStr.includes('-')) return;
+      const parts = dateStr.trim().split('-');
+      if (parts.length !== 3) return;
+
+      const dayNum = parseInt(parts[0], 10);
+      const monthNum = parseInt(parts[1], 10);
+      const yearNum = parseInt(parts[2], 10);
+
+      const daysKn = {
+        1:'ಒಂದು', 2:'ಎರಡು', 3:'ಮೂರು', 4:'ನಾಲ್ಕು', 5:'ಐದು', 6:'ಆರು', 7:'ಏಳು', 8:'ಎಂಟು', 9:'ಒಂಬತ್ತು', 10:'ಹತ್ತು',
+        11:'ಹನ್ನೊಂದು', 12:'ಹನ್ನೆರಡು', 13:'ಹದಿಮೂರು', 14:'ಹದಿನಾಲ್ಕು', 15:'ಹದಿನೈದು', 16:'ಹದಿನಾರು', 17:'ಹದಿನೇಳು',
+        18:'ಹದಿನೆಂಟು', 19:'ಹತ್ತೊಂಬತ್ತು', 20:'ಇಪ್ಪತ್ತು', 21:'ಇಪ್ಪತ್ತೊಂದು', 22:'ಇಪ್ಪತ್ತೆರಡು', 23:'ಇಪ್ಪತ್ತಮೂರು',
+        24:'ಇಪ್ಪತ್ನಾಲ್ಕು', 25:'ಇಪ್ಪತ್ತೈದು', 26:'ಇಪ್ಪತ್ತಾರು', 27:'ಇಪ್ಪತ್ತೇಳು', 28:'ಇಪ್ಪತ್ತೆಂಟು', 29:'ಇಪ್ಪತ್ತೊಂಬತ್ತು',
+        30:'ಮೂವತ್ತು', 31:'ಮೂವತ್ತೊಂದು'
+      };
+
+      const monthsKn = {
+        1:'ಜನವರಿ', 2:'ಫೆಬ್ರವರಿ', 3:'ಮಾರ್ಚ್', 4:'ಏಪ್ರಿಲ್', 5:'ಮೇ', 6:'ಜೂನ್',
+        7:'ಜುಲೈ', 8:'ಆಗಸ್ಟ್', 9:'ಸೆಪ್ಟೆಂಬರ್', 10:'ಅಕ್ಟೋಬರ್', 11:'ನವೆಂಬರ್', 12:'ಡಿಸೆಂಬರ್'
+      };
+
+      if (daysKn[dayNum] && monthsKn[monthNum]) {
+        const words = `${daysKn[dayNum]} ${monthsKn[monthNum]} ಎರಡು ಸಾವಿರದ ಹದಿಮೂರು`;
+        const wordsInput = document.getElementById('tc-dob-words');
+        if (wordsInput && !wordsInput.value) wordsInput.value = words;
+      }
+    };
+
+    // TC ಪ್ರಿವ್ಯೂ ರೆಂಡರ್ (ಅಧಿಕೃತ ಸರ್ಕಾರಿ ನಮೂನೆ)
+    window.generateTransferCertificatePreview = function(e) {
+      if (e) e.preventDefault();
+
+      const schoolName = document.getElementById('tc-school-name')?.value || 'ಸರ್ಕಾರಿ ಹಿರಿಯ ಪ್ರಾಥಮಿಕ ಶಾಲೆ';
+      const tcNo = document.getElementById('tc-number')?.value || '10';
+      const admissionNo = document.getElementById('tc-admission-no')?.value || '08/2025-26';
+      const cumulativeNo = document.getElementById('tc-cumulative-no')?.value || '-';
+      const studentName = document.getElementById('tc-student-name')?.value || '';
+      const fatherName = document.getElementById('tc-father-name')?.value || '';
+      const motherName = document.getElementById('tc-mother-name')?.value || '';
+      const birthPlace = document.getElementById('tc-birth-place')?.value || '';
+      const taluk = document.getElementById('tc-taluk')?.value || '';
+      const district = document.getElementById('tc-district')?.value || '';
+      const state = document.getElementById('tc-state')?.value || 'ಕರ್ನಾಟಕ';
+      const gender = document.getElementById('tc-gender')?.value || 'ಹೆಣ್ಣು';
+      const nationality = document.getElementById('tc-nationality')?.value || 'ಭಾರತೀಯ';
+      const religion = document.getElementById('tc-religion')?.value || 'ಹಿಂದೂ';
+      const caste = document.getElementById('tc-caste')?.value || '';
+      const scSt = document.getElementById('tc-sc-st')?.value || 'ST';
+      const dobFig = document.getElementById('tc-dob-figures')?.value || '';
+      const dobWords = document.getElementById('tc-dob-words')?.value || '';
+      const classLeaving = document.getElementById('tc-class-leaving')?.value || '';
+      const medium = document.getElementById('tc-medium')?.value || 'ಕನ್ನಡ';
+      const qualifiedPromotion = document.getElementById('tc-qualified-promotion')?.value || 'ಹೌದು';
+      const dateAdmission = document.getElementById('tc-date-admission')?.value || '';
+      const lastAttDate = document.getElementById('tc-last-attendance-date')?.value || '';
+      const appDate = document.getElementById('tc-application-date')?.value || '';
+      const issueDate = document.getElementById('tc-issue-date')?.value || '';
+      const workingDays = document.getElementById('tc-total-working-days')?.value || '230';
+      const attendedDays = document.getElementById('tc-attended-days')?.value || '182';
+      const character = document.getElementById('tc-character')?.value || 'ಉತ್ತಮ';
+
+      // IDs
+      const stsNo = document.getElementById('tc-sts-no')?.value || '-';
+      const studentAadhar = document.getElementById('tc-student-aadhar')?.value || '-';
+      const fatherAadhar = document.getElementById('tc-father-aadhar')?.value || '-';
+      const motherAadhar = document.getElementById('tc-mother-aadhar')?.value || '-';
+      const penNo = document.getElementById('tc-pen-no')?.value || '-';
+      const apaarId = document.getElementById('tc-apaar-id')?.value || '-';
+
+      const container = document.getElementById('rendered-tc-sheet');
+      if (!container) return;
+
+      container.innerHTML = `
+        <div id="actual-printable-tc" style="width: 100%; max-width: 800px; margin: 0 auto; background: #fff; border: 2.5px solid #000; padding: 6mm 8mm; box-sizing: border-box; font-family: 'Anek Kannada', sans-serif; color: #000; position: relative;">
+          
+          <!-- TC Header -->
+          <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 4px;">
+            <div style="font-size: 11px; font-weight: 800; letter-spacing: 0.5px;">EDUCATION DEPARTMENT - KARNATAKA STATE</div>
+            <h2 style="font-size: 19px; font-weight: 900; margin: 2px 0; line-height: 1.2;">
+              TRANSFER CERTIFICATE / ವರ್ಗಾವಣೆ ಪ್ರಮಾಣ ಪತ್ರ
+            </h2>
+            <div style="font-size: 11px; font-weight: 800;">(PRIMARY / HIGH / HIGHER SECONDARY / MULTI PURPOSE SCHOOL)</div>
+            <div style="display: flex; justify-content: flex-end; font-weight: 900; font-size: 12px; margin-top: -12px;">
+              <span>No. &nbsp;<b style="font-size: 14px; text-decoration: underline;">${escapeHtml(tcNo)}</b></span>
+            </div>
+          </div>
+
+          <!-- Official Two Column Table -->
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px; line-height: 1.28; border: 1.5px solid #000;">
+            <tbody>
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px; width: 50%;">
+                  <b>1. Name of the School / ಶಾಲೆಯ ಹೆಸರು :</b><br>
+                  <span style="font-size: 12px; font-weight: 900; color: #000;">${escapeHtml(schoolName)}</span>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; width: 50%;">
+                  <b>2. Admission No. / ಪ್ರವೇಶ ಸಂಖ್ಯೆ :</b> &nbsp; <b style="font-size: 12px;">${escapeHtml(admissionNo)}</b><br>
+                  <b>3. Cumulative Record No. / ಕ್ಯುಮುಲೇಟಿವ್ ರೆಕಾರ್ಡ್ ನಂ. :</b> &nbsp; <b>${escapeHtml(cumulativeNo)}</b>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>4. Name of the Pupil in Full<br>ವಿದ್ಯಾರ್ಥಿಯ ಪೂರ್ಣ ಹೆಸರು :</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; font-size: 13px; font-weight: 900;">
+                  ${escapeHtml(studentName)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>5. Place of Birth / ಹುಟ್ಟಿದ ಸ್ಥಳ :</b> ${escapeHtml(birthPlace)}<br>
+                  <b>6. Taluk / ತಾಲೂಕು :</b> ${escapeHtml(taluk)}
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>7. District / ಜಿಲ್ಲೆ :</b> ${escapeHtml(district)}<br>
+                  <b>8. State / ರಾಜ್ಯ :</b> ${escapeHtml(state)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>9. Sex / ಲಿಂಗ :</b> <b>${escapeHtml(gender)}</b> &nbsp;&nbsp;|&nbsp;&nbsp; <b>10. Nationality :</b> ${escapeHtml(nationality)}<br>
+                  <b>11. Caste / ಜಾತಿ :</b> <b>${escapeHtml(caste)}</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>12. Religion / ಧರ್ಮ :</b> <b>${escapeHtml(religion)}</b><br>
+                  <b>13. Sub Caste / ಉಪಜಾತಿ :</b> -
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>14. Name of the Father / ತಂದೆಯ ಹೆಸರು :</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; font-size: 12px; font-weight: 800;">
+                  ${escapeHtml(fatherName)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>15. Name of the Mother / ತಾಯಿಯ ಹೆಸರು :</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; font-size: 12px; font-weight: 800;">
+                  ${escapeHtml(motherName)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>16. Whether belongs to SC or ST?<br>ಪರಿಶಿಷ್ಟ ಜಾತಿ ಅಥವಾ ಪರಿಶಿಷ್ಟ ಪಂಗಡಕ್ಕೆ ಸೇರಿದವನಾಗಿದ್ದಾನೆಯೇ? :</b> &nbsp; <b>${escapeHtml(scSt)}</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>17. Whether qualified for promotion to higher Standard?<br>ಮುಂದಿನ ತರಗತಿಗೆ ಉತ್ತೀರ್ಣಗೊಳಿಸಲು ಅರ್ಹನಾಗಿದ್ದಾನೆಯೇ? :</b> &nbsp; <b style="font-size: 12px;">${escapeHtml(qualifiedPromotion)}</b>
+                </td>
+              </tr>
+
+              <tr>
+                <td colspan="2" style="border: 1px solid #000; padding: 4px 6px;">
+                  <b>18. Date of Birth (In Figures & Words) / ಹುಟ್ಟಿದ ದಿನಾಂಕ (ಅಕ್ಷರಗಳಲ್ಲಿ ಮತ್ತು ಅಂಕಿಗಳಲ್ಲಿ) :</b><br>
+                  <span style="font-size: 12px; font-weight: 900; margin-right: 12px;">${escapeHtml(dobFig)}</span>
+                  <span style="font-size: 12px; font-weight: 800; color: #1e1b4b;">(${escapeHtml(dobWords)})</span>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>19. Standard in which the pupil was reading at the time of leaving the School (In words)<br>ಶಾಲೆಯನ್ನು ಬಿಡುವಾಗ ಓದುತ್ತಿದ್ದ ದರ್ಜೆ - ತರಗತಿ :</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; font-size: 12px; font-weight: 900;">
+                  ${escapeHtml(classLeaving)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>21. Medium of Instruction / ಬೋಧನಾ ಮಾಧ್ಯಮ :</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; font-weight: 800;">
+                  ${escapeHtml(medium)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>22. Date of Admission or Promotion to that Class:<br>ಆ ವರ್ಗಕ್ಕೆ ಅಥವಾ ತರಗತಿಗೆ ಪ್ರವೇಶ ಪಡೆದ ದಿನಾಂಕ :</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; font-weight: 800;">
+                  ${escapeHtml(dateAdmission)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>26. Whether Medical Examined or not? / ವೈದ್ಯಕೀಯ ಪರೀಕ್ಷೆ :</b> ಹೌದು
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>27. Date of Pupil's last attendance at School:<br>ಶಾಲೆಗೆ ಕೊನೆಗೆ ಹಾಜರಾಗಿದ್ದ ದಿನಾಂಕ :</b> &nbsp; <b>${escapeHtml(lastAttDate)}</b>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>28. Date on which the application for TC received:<br>ವರ್ಗಾವಣೆ ಪ್ರಮಾಣ ಪತ್ರಕ್ಕಾಗಿ ಅರ್ಜಿ ಸ್ವೀಕರಿಸಿದ ದಿನಾಂಕ :</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; font-weight: 800;">
+                  ${escapeHtml(appDate)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>29. Date of issue of the Transfer Certificate:<br>ವರ್ಗಾವಣೆ ಪ್ರಮಾಣ ಪತ್ರ ನೀಡಿಕೆ ದಿನಾಂಕ :</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; font-weight: 800;">
+                  ${escapeHtml(issueDate)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>30. Number of School days up to date of leaving:<br>ಶಾಲೆ ಬಿಟ್ಟ ದಿನಾಂಕದವರೆಗಿನ ಶಾಲೆಯ ದಿನಗಳ ಸಂಖ್ಯೆ :</b> &nbsp; <b>${escapeHtml(workingDays)}</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>31. Number of School days the pupil attended:<br>ವಿದ್ಯಾರ್ಥಿಯು ಹಾಜರಾಗಿದ್ದ ಶಾಲೆಯ ದಿನಗಳ ಸಂಖ್ಯೆ :</b> &nbsp; <b>${escapeHtml(attendedDays)}</b>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>32. Character and Conduct / ಶೀಲ ಮತ್ತು ಚಾರಿತ್ರ್ಯ :</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px; font-weight: 800;">
+                  ${escapeHtml(character)}
+                </td>
+              </tr>
+
+              <!-- 🌟 SPECIAL ID NUMBERS (STS, AADHAR, PARENTS AADHAR, PEN, APAAR) -->
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>33. STS No. / ಎಸ್.ಟಿ.ಎಸ್ ನಂ. :</b> &nbsp; <b style="font-size: 12px; font-family: monospace;">${escapeHtml(stsNo)}</b><br>
+                  <b>34. Student Aadhar / ವಿದ್ಯಾರ್ಥಿ ಆಧಾರ್ :</b> &nbsp; <b>${escapeHtml(studentAadhar)}</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>👨 Father Aadhar / ತಂದೆಯ ಆಧಾರ್ :</b> &nbsp; <b>${escapeHtml(fatherAadhar)}</b><br>
+                  <b>👩 Mother Aadhar / ತಾಯಿಯ ಆಧಾರ್ :</b> &nbsp; <b>${escapeHtml(motherAadhar)}</b>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>🆔 PEN No. :</b> &nbsp; <b style="font-size: 12px; font-family: monospace;">${escapeHtml(penNo)}</b>
+                </td>
+                <td style="border: 1px solid #000; padding: 3px 6px;">
+                  <b>🪪 APAAR ID :</b> &nbsp; <b style="font-size: 12px; font-family: monospace;">${escapeHtml(apaarId)}</b>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Footer & Signatures -->
+          <div style="margin-top: 18px; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 10px;">
+            <div style="font-size: 10px; font-weight: 700; max-width: 55%; line-height: 1.3;">
+              <b>Note:</b> This Transfer Certificate will be issued on application made by the Parent or the Guardian.
+            </div>
+            <div style="text-align: center;">
+              <div style="font-size: 12px; font-weight: 900; margin-bottom: 2px;">ಮುಖ್ಯೋಪಾಧ್ಯಾಯರು</div>
+              <div style="font-size: 11px; font-weight: 800;">Signature of the Head of the Institution</div>
+              <div style="font-size: 10px; font-weight: bold;">(With School Seal)</div>
+            </div>
+          </div>
+
+        </div>
+      `;
+
+      showToast('✅ TC ಪ್ರಿವ್ಯೂ ಸಿದ್ಧವಾಗಿದೆ! ಕೆಳಗೆ ಮುದ್ರಿಸಿ.', 'info');
+    };
+
+    // TC ಪ್ರಿಂಟ್ ಎಂಜಿನ್ (ಪ್ರತ್ಯೇಕ A4 ಪೇಜ್)
+    window.printTransferCertificateDirect = function() {
+      const tcElement = document.getElementById('actual-printable-tc');
+      if (!tcElement) return alert('ದಯವಿಟ್ಟು ಮೊದಲು TC ವಿವರಗಳನ್ನು ಭರ್ತಿ ಮಾಡಿ ಪ್ರಿವ್ಯೂ ಪಡೆಯಿರಿ.');
+
+      let printFrame = document.getElementById('isolated-tc-print-frame');
+      if (printFrame) printFrame.remove();
+
+      printFrame = document.createElement('iframe');
+      printFrame.id = 'isolated-tc-print-frame';
+      printFrame.style.position = 'fixed';
+      printFrame.style.right = '0';
+      printFrame.style.bottom = '0';
+      printFrame.style.width = '0';
+      printFrame.style.height = '0';
+      printFrame.style.border = 'none';
+      document.body.appendChild(printFrame);
+
+      const frameDoc = printFrame.contentWindow.document;
+      frameDoc.open();
+      frameDoc.write(`
+        <!DOCTYPE html>
+        <html lang="kn">
+        <head>
+          <meta charset="UTF-8">
+          <title>Transfer_Certificate_TC</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Anek+Kannada:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+          <style>
+            @page { size: A4 portrait; margin: 6mm 8mm !important; }
+            * { box-sizing: border-box; font-family: 'Anek Kannada', sans-serif !important; }
+            body { margin: 0; padding: 0; background: #fff; color: #000; }
+          </style>
+        </head>
+        <body>
+          ${tcElement.outerHTML}
+        </body>
+        </html>
+      `);
+      frameDoc.close();
+
+      setTimeout(() => {
+        printFrame.contentWindow.focus();
+        printFrame.contentWindow.print();
+      }, 400);
+    };
         
     </script>
 </body>
