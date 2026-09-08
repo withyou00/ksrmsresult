@@ -19567,17 +19567,30 @@
         };
 
 
-// ----------------------------------------------------------------------
-        // TC GENERATOR FIX - DUAL LANGUAGE NAMES (KN/EN), PARENT AADHAAR & NO-CLICK-BUG
-        // ----------------------------------------------------------------------
+// ======================================================================
+        // ALL-IN-ONE COMPLETE TC (TRANSFER CERTIFICATE) GENERATOR MODULE
+        // ======================================================================
 
-        // Safe Element Value Getter
+        function convertDobToWords(dobStr) {
+            if (!dobStr || dobStr === '-') return '';
+            const clean = cleanDateFormat(dobStr);
+            const parts = clean.split('-');
+            if (parts.length !== 3) return '';
+
+            const y = parseInt(parts[0]);
+            const m = parseInt(parts[1]);
+            const d = parseInt(parts[2]);
+
+            const monthsKn = ['', 'ಜನವರಿ', 'ಫೆಬ್ರವರಿ', 'ಮಾರ್ಚ್', 'ಏಪ್ರಿಲ್', 'ಮೇ', 'ಜೂನ್', 'ಜುಲೈ', 'ಆಗಸ್ಟ್', 'ಸೆಪ್ಟೆಂಬರ್', 'ಅಕ್ಟೋಬರ್', 'ನವೆಂಬರ್', 'ಡಿಸೆಂಬರ್'];
+            const monthName = monthsKn[m] || '';
+            return `${d} - ${monthName} - ${y}`;
+        }
+
         function getTcVal(id) {
             const el = document.getElementById(id);
             return el ? el.value.trim() : '';
         }
 
-        // Auto-fill student data into TC Form (with Kannada/English Name Mapping)
         function loadTcFormData() {
             const stId = document.getElementById('tcStSelect')?.value;
             const st = sampleStudents.find(s => String(s.id) === String(stId)) || sampleStudents[0];
@@ -19637,7 +19650,6 @@
             setV('tcMotherAadhaarNo', st.motherAadhaar || '');
         }
 
-        // Generate Official Single-Page A4 Portrait Transfer Certificate Layout
         function generateTransferCertificatePrint() {
             try {
                 const data = {
@@ -19647,7 +19659,6 @@
                     admNo: getTcVal('tcAdmNo'),
                     cumNo: getTcVal('tcCumulativeNo'),
                     
-                    // Student, Father, Mother Names (Kannada + English)
                     stNameKn: getTcVal('tcStNameKn'),
                     stNameEn: getTcVal('tcStNameEn'),
                     fatherNameKn: getTcVal('tcFatherNameKn'),
@@ -19683,7 +19694,6 @@
                     attDays: getTcVal('tcAttDays'),
                     character: getTcVal('tcCharacter'),
 
-                    // IDs & Aadhaar
                     satsNo: getTcVal('tcSatsNo'),
                     penNo: getTcVal('tcPenNo'),
                     apaarNo: getTcVal('tcApaarNo'),
@@ -19695,7 +19705,6 @@
                 const hmName = appSettings.hmName || '';
                 const hmSig = appSettings.hmSigUrl || '';
 
-                // Display Name Combos (Kannada / English)
                 const fullStName = data.stNameKn ? `${data.stNameKn} / ${data.stNameEn}` : data.stNameEn;
                 const fullFatherName = data.fatherNameKn ? `${data.fatherNameKn} / ${data.fatherNameEn}` : data.fatherNameEn;
                 const fullMotherName = data.motherNameKn ? `${data.motherNameKn} / ${data.motherNameEn}` : data.motherNameEn;
@@ -19815,7 +19824,6 @@
                     printCont.innerHTML = tcHtml;
                 }
 
-                // Close Modal & Switch to Reports Print View
                 const modalEl = document.getElementById('tcGeneratorModal');
                 if (modalEl) {
                     const mInst = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
@@ -19833,7 +19841,29 @@
             }
         }
 
-        // Inject Updated Modal HTML into DOM
+        function openTcGeneratorModal(stId = null) {
+            if (!checkLicensePermission("generate transfer certificate")) return;
+
+            let tcModal = document.getElementById('tcGeneratorModal');
+            if (!tcModal) {
+                injectTcModalHTML();
+                tcModal = document.getElementById('tcGeneratorModal');
+            }
+
+            const modalInst = new bootstrap.Modal(tcModal);
+
+            const stSelect = document.getElementById('tcStSelect');
+            if (stSelect) {
+                const currentClass = getActiveReportClass();
+                const classStudents = sampleStudents.filter(s => s.className === currentClass);
+                stSelect.innerHTML = classStudents.map(s => `<option value="${s.id}">${s.name} (Adm: ${s.admissionNo||'-'})</option>`).join('');
+                if (stId) stSelect.value = stId;
+            }
+
+            loadTcFormData();
+            modalInst.show();
+        }
+
         function injectTcModalHTML() {
             const oldModal = document.getElementById('tcGeneratorModal');
             if (oldModal) oldModal.remove();
@@ -19946,15 +19976,12 @@
                         </div>
                     </div>
                 </div>`;
-        document.body.appendChild(modalDiv);
-    }
+            document.body.appendChild(modalDiv);
+        }
 
-        // ----------------------------------------------------------------------
-        // PROMINENT TC GENERATOR BUTTON INJECTOR FOR REPORTS & STUDENT DATABASE
-        // ----------------------------------------------------------------------
+        // Auto-Inject TC Buttons Everywhere
         (function injectTcButtonsEverywhere() {
             function addTcUI() {
-                // 1. Add TC Button in Reports Section Toolbar
                 const rptBtnGroup = document.querySelector('#reportsSection .card-body .row.g-2');
                 if (rptBtnGroup && !document.getElementById('btnOpenTcGenReports')) {
                     const tcCol = document.createElement('div');
@@ -19966,7 +19993,6 @@
                     rptBtnGroup.appendChild(tcCol);
                 }
 
-                // 2. Add TC Button in Student Database Header Toolbar
                 const stBtnGroup = document.querySelector('#studentSection .card-header .d-flex');
                 if (stBtnGroup && !document.getElementById('btnOpenTcGenStDB')) {
                     const tcBtn = document.createElement('button');
@@ -19987,9 +20013,9 @@
 
         // Add [ TC ] Action Button for Each Student in Directory Table
         if (typeof renderStudentTable === 'function') {
-            const _baseRenderStTableForTC = renderStudentTable;
+            const _baseRenderStTableForTCFinalBlock = renderStudentTable;
             renderStudentTable = function() {
-                _baseRenderStTableForTC();
+                _baseRenderStTableForTCFinalBlock();
 
                 const tbody = document.getElementById('studentTableBody');
                 if (!tbody) return;
