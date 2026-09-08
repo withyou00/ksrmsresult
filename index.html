@@ -19948,6 +19948,71 @@
                 </div>`;
         document.body.appendChild(modalDiv);
     }
+
+        // ----------------------------------------------------------------------
+        // PROMINENT TC GENERATOR BUTTON INJECTOR FOR REPORTS & STUDENT DATABASE
+        // ----------------------------------------------------------------------
+        (function injectTcButtonsEverywhere() {
+            function addTcUI() {
+                // 1. Add TC Button in Reports Section Toolbar
+                const rptBtnGroup = document.querySelector('#reportsSection .card-body .row.g-2');
+                if (rptBtnGroup && !document.getElementById('btnOpenTcGenReports')) {
+                    const tcCol = document.createElement('div');
+                    tcCol.className = 'col-md-3 mt-2';
+                    tcCol.innerHTML = `
+                        <button class="btn btn-primary w-100 fw-bold py-2 fs-8 shadow-sm" id="btnOpenTcGenReports" onclick="openTcGeneratorModal()">
+                            <i class="fa-solid fa-file-contract me-1"></i> TC Generator (ವರ್ಗಾವಣೆ ಪತ್ರ)
+                        </button>`;
+                    rptBtnGroup.appendChild(tcCol);
+                }
+
+                // 2. Add TC Button in Student Database Header Toolbar
+                const stBtnGroup = document.querySelector('#studentSection .card-header .d-flex');
+                if (stBtnGroup && !document.getElementById('btnOpenTcGenStDB')) {
+                    const tcBtn = document.createElement('button');
+                    tcBtn.id = 'btnOpenTcGenStDB';
+                    tcBtn.className = 'btn btn-primary btn-sm fw-bold shadow-sm ms-2';
+                    tcBtn.onclick = function() { openTcGeneratorModal(); };
+                    tcBtn.innerHTML = `<i class="fa-solid fa-file-contract me-1"></i> TC Generator`;
+                    stBtnGroup.appendChild(tcBtn);
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', addTcUI);
+            } else {
+                addTcUI();
+            }
+        })();
+
+        // Add [ TC ] Action Button for Each Student in Directory Table
+        if (typeof renderStudentTable === 'function') {
+            const _baseRenderStTableForTC = renderStudentTable;
+            renderStudentTable = function() {
+                _baseRenderStTableForTC();
+
+                const tbody = document.getElementById('studentTableBody');
+                if (!tbody) return;
+
+                const rows = tbody.querySelectorAll('tr');
+                rows.forEach(tr => {
+                    const actionTd = tr.querySelector('td:last-child');
+                    const editBtn = actionTd?.querySelector('button[onclick*="editStudent"]');
+                    if (actionTd && editBtn) {
+                        const stIdMatch = editBtn.getAttribute('onclick').match(/'([^']+)'/);
+                        if (stIdMatch && stIdMatch[1] && !actionTd.querySelector('.btn-tc-action')) {
+                            const stId = stIdMatch[1];
+                            const tcBtn = document.createElement('button');
+                            tcBtn.className = 'btn btn-xs btn-outline-success py-0 px-2 me-1 fw-bold btn-tc-action';
+                            tcBtn.onclick = function() { openTcGeneratorModal(stId); };
+                            tcBtn.title = 'ವರ್ಗಾವಣೆ ಪತ್ರ (TC) ಜನರೇಟ್ ಮಾಡಿ';
+                            tcBtn.innerHTML = '<i class="fa-solid fa-file-contract"></i> TC';
+                            actionTd.insertBefore(tcBtn, editBtn);
+                        }
+                    }
+                });
+            };
+        }
         
     </script>
 </body>
