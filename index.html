@@ -19567,7 +19567,387 @@
         };
 
 
+// ----------------------------------------------------------------------
+        // TC GENERATOR FIX - DUAL LANGUAGE NAMES (KN/EN), PARENT AADHAAR & NO-CLICK-BUG
+        // ----------------------------------------------------------------------
 
+        // Safe Element Value Getter
+        function getTcVal(id) {
+            const el = document.getElementById(id);
+            return el ? el.value.trim() : '';
+        }
+
+        // Auto-fill student data into TC Form (with Kannada/English Name Mapping)
+        function loadTcFormData() {
+            const stId = document.getElementById('tcStSelect')?.value;
+            const st = sampleStudents.find(s => String(s.id) === String(stId)) || sampleStudents[0];
+            if (!st) return;
+
+            const setV = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+
+            setV('tcNo', st.tcNo || Math.floor(1 + Math.random() * 50));
+            setV('tcYear', appSettings.academicYear || '2025-26');
+            setV('tcSchoolName', appSettings.schoolName || '');
+            setV('tcAdmNo', st.admissionNo || '');
+            setV('tcCumulativeNo', st.cumulativeNo || '-');
+
+            // Dual Names (Kannada & English)
+            setV('tcStNameKn', st.nameKn || '');
+            setV('tcStNameEn', st.name || '');
+            setV('tcFatherNameKn', st.fatherKn || '');
+            setV('tcFatherNameEn', st.father || extractFatherFromFullName(st.name) || '');
+            setV('tcMotherNameKn', st.motherKn || '');
+            setV('tcMotherNameEn', st.mother || '');
+
+            setV('tcBirthPlace', st.birthPlace || appSettings.cluster || '');
+            setV('tcTaluk', appSettings.block || '');
+            setV('tcDistrict', appSettings.district || '');
+            setV('tcState', 'ಕರ್ನಾಟಕ / KARNATAKA');
+            setV('tcGender', st.gender === 'Boy' ? 'ಗಂಡು / BOY' : st.gender === 'Girl' ? 'ಹೆಣ್ಣು / GIRL' : '');
+            setV('tcNationality', 'ಭಾರತೀಯ / INDIAN');
+            setV('tcReligion', st.religion || 'ಹಿಂದೂ');
+            setV('tcCaste', st.casteName || 'ಸಾಮಾನ್ಯ');
+            setV('tcSubCaste', st.subCaste || '-');
+            setV('tcCasteCat', st.casteCat || 'General');
+
+            setV('tcIsScSt', (st.casteCat === 'SC' || st.casteCat === 'ST') ? st.casteCat : 'No / ಇಲ್ಲ');
+            setV('tcIsQualified', 'Yes - ಅರ್ಹರಾಗಿದ್ದಾರೆ / Qualified');
+            setV('tcDobFigures', cleanDateFormat(st.dob));
+            setV('tcDobWords', convertDobToWords(st.dob));
+            setV('tcClassLeft', st.className || '');
+            setV('tcMedium', 'ಕನ್ನಡ / KANNADA');
+            setV('tcAdmDate', st.admDate || '10-04-2025');
+            setV('tcDuesPaid', 'Yes - ಪಾವತಿಸಲಾಗಿದೆ / Paid');
+            setV('tcConcession', 'No / ಇಲ್ಲ');
+            setV('tcScholarship', 'No / ಇಲ್ಲ');
+            setV('tcMedicalExam', 'Yes / ಮಾಡಲಾಗಿದೆ');
+            setV('tcLastAttDate', st.lastAttDate || '10-04-2026');
+            setV('tcAppDate', st.appDate || '20-04-2026');
+            setV('tcIssueDate', st.issueDate || '21-04-2026');
+            setV('tcTotalDays', appSettings.totalWorkingDays || 239);
+            setV('tcAttDays', st.co?.attDays || 205);
+            setV('tcCharacter', 'ಉತ್ತಮ / GOOD');
+
+            // IDs & Aadhaar Numbers
+            setV('tcSatsNo', st.sats || '');
+            setV('tcPenNo', st.pen || '');
+            setV('tcApaarNo', st.apaarId || st.apaar || '');
+            setV('tcAadhaarNo', st.stAadhaar || '');
+            setV('tcFatherAadhaarNo', st.fatherAadhaar || '');
+            setV('tcMotherAadhaarNo', st.motherAadhaar || '');
+        }
+
+        // Generate Official Single-Page A4 Portrait Transfer Certificate Layout
+        function generateTransferCertificatePrint() {
+            try {
+                const data = {
+                    tcNo: getTcVal('tcNo'),
+                    tcYear: getTcVal('tcYear'),
+                    schoolName: getTcVal('tcSchoolName'),
+                    admNo: getTcVal('tcAdmNo'),
+                    cumNo: getTcVal('tcCumulativeNo'),
+                    
+                    // Student, Father, Mother Names (Kannada + English)
+                    stNameKn: getTcVal('tcStNameKn'),
+                    stNameEn: getTcVal('tcStNameEn'),
+                    fatherNameKn: getTcVal('tcFatherNameKn'),
+                    fatherNameEn: getTcVal('tcFatherNameEn'),
+                    motherNameKn: getTcVal('tcMotherNameKn'),
+                    motherNameEn: getTcVal('tcMotherNameEn'),
+
+                    birthPlace: getTcVal('tcBirthPlace'),
+                    taluk: getTcVal('tcTaluk'),
+                    district: getTcVal('tcDistrict'),
+                    state: getTcVal('tcState'),
+                    gender: getTcVal('tcGender'),
+                    nationality: getTcVal('tcNationality'),
+                    religion: getTcVal('tcReligion'),
+                    caste: getTcVal('tcCaste'),
+                    subCaste: getTcVal('tcSubCaste'),
+                    casteCat: getTcVal('tcCasteCat'),
+                    isScSt: getTcVal('tcIsScSt'),
+                    isQualified: getTcVal('tcIsQualified'),
+                    dobFig: getTcVal('tcDobFigures'),
+                    dobWords: getTcVal('tcDobWords'),
+                    classLeft: getTcVal('tcClassLeft'),
+                    medium: getTcVal('tcMedium'),
+                    admDate: getTcVal('tcAdmDate'),
+                    duesPaid: getTcVal('tcDuesPaid'),
+                    concession: getTcVal('tcConcession'),
+                    scholarship: getTcVal('tcScholarship'),
+                    medicalExam: getTcVal('tcMedicalExam'),
+                    lastAttDate: getTcVal('tcLastAttDate'),
+                    appDate: getTcVal('tcAppDate'),
+                    issueDate: getTcVal('tcIssueDate'),
+                    totDays: getTcVal('tcTotalDays'),
+                    attDays: getTcVal('tcAttDays'),
+                    character: getTcVal('tcCharacter'),
+
+                    // IDs & Aadhaar
+                    satsNo: getTcVal('tcSatsNo'),
+                    penNo: getTcVal('tcPenNo'),
+                    apaarNo: getTcVal('tcApaarNo'),
+                    aadhaarNo: getTcVal('tcAadhaarNo'),
+                    fatherAadhaarNo: getTcVal('tcFatherAadhaarNo'),
+                    motherAadhaarNo: getTcVal('tcMotherAadhaarNo')
+                };
+
+                const hmName = appSettings.hmName || '';
+                const hmSig = appSettings.hmSigUrl || '';
+
+                // Display Name Combos (Kannada / English)
+                const fullStName = data.stNameKn ? `${data.stNameKn} / ${data.stNameEn}` : data.stNameEn;
+                const fullFatherName = data.fatherNameKn ? `${data.fatherNameKn} / ${data.fatherNameEn}` : data.fatherNameEn;
+                const fullMotherName = data.motherNameKn ? `${data.motherNameKn} / ${data.motherNameEn}` : data.motherNameEn;
+
+                document.getElementById('dynamicPageStyle').innerHTML = `@page { size: A4 portrait !important; margin: 3mm 4mm !important; }`;
+
+                const tcHtml = `
+                    <div class="official-tc-paper p-3 border border-2 border-dark" id="officialTcPrintCard" style="font-family:'Anek Kannada', 'Poppins', sans-serif; background:#fff; max-width:195mm; margin:0 auto; box-sizing:border-box;">
+                        <div class="text-center border-bottom border-2 border-dark pb-2 mb-2">
+                            <div class="fw-bold fs-7">EDUCATION DEPARTMENT - KARNATAKA STATE</div>
+                            <div class="fw-bold fs-5 text-uppercase report-header-title1">TRANSFER CERTIFICATE / ವರ್ಗಾವಣೆ ಪ್ರಮಾಣ ಪತ್ರ</div>
+                            <div class="d-flex justify-content-between px-3 fw-bold fs-8 mt-1">
+                                <span>(PRIMARY / HIGH / HIGHER SECONDARY SCHOOL)</span>
+                                <span>TC No: <span class="text-danger fs-6">${data.tcNo}</span> / ${data.tcYear}</span>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-bordered border-dark table-sm align-middle fs-8 mb-2" style="font-size: 0.76rem !important;">
+                                <tbody>
+                                    <tr>
+                                        <td colspan="2"><strong>1. Name of School / ಶಾಲೆಯ ಹೆಸರು:</strong><br><span class="fw-bold text-primary fs-7">${data.schoolName}</span></td>
+                                        <td><strong>2. Admission No. / ಪ್ರವೇಶ ಸಂಖ್ಯೆ:</strong><br><span class="fw-bold fs-7">${data.admNo}</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="3"><strong>3. Cumulative Record No. / ಕ್ಯುಮುಲೇಟಿವ್ ರೆಕಾರ್ಡ್ ನಂ.:</strong> ${data.cumNo || '-'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="3"><strong>4. Name of Pupil in Full / ವಿದ್ಯಾರ್ಥಿಯ ಪೂರ್ಣ ಹೆಸರು:</strong><br><span class="fw-bold text-primary fs-6">${fullStName}</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>5. Place of Birth / ಹುಟ್ಟಿದ ಸ್ಥಳ:</strong> ${data.birthPlace}</td>
+                                        <td><strong>6. Taluk / ತಾಲೂಕು:</strong> ${data.taluk}</td>
+                                        <td><strong>7. District / ಜಿಲ್ಲೆ:</strong> ${data.district}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>8. State / ರಾಜ್ಯ:</strong> ${data.state}</td>
+                                        <td><strong>9. Sex / ಲಿಂಗ:</strong> ${data.gender}</td>
+                                        <td><strong>10. Nationality / ರಾಷ್ಟ್ರೀಯತೆ:</strong> ${data.nationality}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>11. Religion / ಧರ್ಮ:</strong> ${data.religion}</td>
+                                        <td><strong>12. Caste / ಜಾತಿ:</strong> ${data.caste}</td>
+                                        <td><strong>13. Sub Caste / ಉಪಜಾತಿ:</strong> ${data.subCaste}</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="2"><strong>14. Name of Father / ತಂದೆಯ ಹೆಸರು:</strong><br><span class="fw-bold">${fullFatherName}</span></td>
+                                        <td><strong>15. Name of Mother / ತಾಯಿಯ ಹೆಸರು:</strong><br><span class="fw-bold">${fullMotherName}</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="2"><strong>16. Belongs to SC / ST? / ಪ.ಜಾ / ಪ.ಪಂಗಡಕ್ಕೆ ಸೇರಿದವನೇ?:</strong> ${data.isScSt}</td>
+                                        <td><strong>17. Qualified for Promotion? / ತೇರ್ಗಡೆಯಾಗಿದ್ದಾನೆಯೇ?:</strong><br><span class="fw-bold text-success">${data.isQualified}</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="3">
+                                            <strong>18. Date of Birth / ಹುಟ್ಟಿದ ದಿನಾಂಕ:</strong><br>
+                                            (In Figures): <span class="fw-bold fs-7 me-3">${data.dobFig}</span>
+                                            (In Words): <span class="fw-bold fs-7 text-primary">${data.dobWords}</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="2"><strong>19. Standard reading at time of leaving / ಓದುತ್ತಿದ್ದ ತರಗತಿ:</strong><br><span class="fw-bold fs-7">${data.classLeft}</span></td>
+                                        <td><strong>20. Medium of Instruction / ಬೋಧನಾ ಮಾಧ್ಯಮ:</strong> ${data.medium}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>21. Date of Admission / ತರಗತಿಗೆ ಪ್ರವೇಶ ದಿನಾಂಕ:</strong> ${data.admDate}</td>
+                                        <td><strong>22. Fees Dues Paid? / ಶುಲ್ಕ ಬಾಕಿಯಿದೆಯೇ?:</strong> ${data.duesPaid}</td>
+                                        <td><strong>23. Fee Concession / ಶುಲ್ಕ ವಿನಾಯಿತಿ:</strong> ${data.concession}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>24. Scholarship if any / ವಿದ್ಯಾರ್ಥಿ ವೇತನ:</strong> ${data.scholarship}</td>
+                                        <td colspan="2"><strong>25. Medical Examined? / ವೈದ್ಯಕೀಯ ಪರೀಕ್ಷೆ:</strong> ${data.medicalExam}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>26. Last Attendance Date / ಕೊನೆಯ ದಿನಾಂಕ:</strong> ${data.lastAttDate}</td>
+                                        <td><strong>27. TC Application Date / ಕೋರಿ ಬಂದ ದಿನಾಂಕ:</strong> ${data.appDate}</td>
+                                        <td><strong>28. Issue Date of TC / ನೀಡಿದ ದಿನಾಂಕ:</strong> ${data.issueDate}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>29. Total Working Days / ಒಟ್ಟು ದಿನಗಳು:</strong> ${data.totDays}</td>
+                                        <td><strong>30. Days Attended / ಹಾಜರಿದ್ದ ದಿನಗಳು:</strong> ${data.attDays}</td>
+                                        <td><strong>31. Character &amp; Conduct / ನಡತೆ:</strong> <span class="fw-bold text-success">${data.character}</span></td>
+                                    </tr>
+                                    <tr class="table-warning">
+                                        <td><strong>32. SATS No / ಎಸ್.ಟಿ.ಎಸ್ ನಂ.:</strong><br><span class="fw-bold text-dark fs-7">${data.satsNo}</span></td>
+                                        <td><strong>33. PEN ID Number / PEN No:</strong><br><span class="fw-bold text-primary fs-7">${data.penNo}</span></td>
+                                        <td><strong>34. APAAR ID Number / APAAR No:</strong><br><span class="fw-bold text-danger fs-7">${data.apaarNo}</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>35. Student Aadhaar / ವಿದ್ಯಾರ್ಥಿ ಆಧಾರ್:</strong><br><span class="fw-bold">${data.aadhaarNo}</span></td>
+                                        <td><strong>36. Father Aadhaar / ತಂದೆಯ ಆಧಾರ್:</strong><br><span class="fw-bold">${data.fatherAadhaarNo}</span></td>
+                                        <td><strong>37. Mother Aadhaar / ತಾಯಿಯ ಆಧಾರ್:</strong><br><span class="fw-bold">${data.motherAadhaarNo}</span></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-end pt-3 mt-2 border-top border-dark fs-8 fw-bold">
+                            <div class="text-center">
+                                <small class="d-block text-muted mb-4">ಪಾಲಕರ ಸಹಿ / Parent Signature</small>
+                                <div>________________________</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="d-flex flex-column align-items-center mb-1">
+                                    ${hmSig ? `<img src="${hmSig}" style="max-height:35px;" class="mb-1">` : ''}
+                                    <div class="seal-circle-placeholder" style="width:36px; height:36px; font-size:0.45rem;"><span>School Seal</span></div>
+                                    <small class="fw-bold text-dark mt-1">${hmName}</small>
+                                </div>
+                                <div>________________________</div>
+                                <div>Signature of Head of Institution / ಮುಖ್ಯೋಪಾಧ್ಯಾಯರ ಸಹಿ &amp; ಮೊಹರು</div>
+                            </div>
+                        </div>
+                    </div>`;
+
+                const printCont = document.getElementById('printContainer');
+                if (printCont) {
+                    printCont.innerHTML = tcHtml;
+                }
+
+                // Close Modal & Switch to Reports Print View
+                const modalEl = document.getElementById('tcGeneratorModal');
+                if (modalEl) {
+                    const mInst = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                    mInst.hide();
+                }
+
+                document.querySelectorAll('.content-section').forEach(sec => sec.classList.add('d-none'));
+                document.getElementById('reportsSection').classList.remove('d-none');
+                
+                if (printCont) printCont.scrollIntoView({ behavior: 'smooth' });
+
+            } catch(err) {
+                console.error("TC Generation Error:", err);
+                alert("TC Generation Error: " + err.message);
+            }
+        }
+
+        // Inject Updated Modal HTML into DOM
+        function injectTcModalHTML() {
+            const oldModal = document.getElementById('tcGeneratorModal');
+            if (oldModal) oldModal.remove();
+
+            const modalDiv = document.createElement('div');
+            modalDiv.className = 'modal fade';
+            modalDiv.id = 'tcGeneratorModal';
+            modalDiv.tabIndex = -1;
+            modalDiv.setAttribute('aria-hidden', 'true');
+            modalDiv.innerHTML = `
+                <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                    <div class="modal-content border-primary shadow">
+                        <div class="modal-header bg-primary text-white fw-bold py-2">
+                            <h5 class="modal-title fs-6"><i class="fa-solid fa-file-contract me-2"></i> ವರ್ಗಾವಣೆ ಪ್ರಮಾಣ ಪತ್ರ (Transfer Certificate - TC Edit Form)</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-3 fs-8">
+                            <div class="mb-3 bg-light p-2 border rounded">
+                                <label class="form-label fw-bold text-primary mb-1">ವಿದ್ಯಾರ್ಥಿ ಆಯ್ಕೆ ಮಾಡಿ (Select Student):</label>
+                                <select id="tcStSelect" class="form-select border-primary fw-bold" onchange="loadTcFormData()"></select>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-md-3"><label class="fw-bold">TC No. (ಕ್ರ.ಸಂ)</label><input type="text" id="tcNo" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">Year (ವರ್ಷ)</label><input type="text" id="tcYear" class="form-control form-control-sm"></div>
+                                <div class="col-md-6"><label class="fw-bold">School Name (ಶಾಲೆಯ ಹೆಸರು)</label><input type="text" id="tcSchoolName" class="form-control form-control-sm"></div>
+                                
+                                <div class="col-md-4"><label class="fw-bold">1. Admission No. (ಪ್ರವೇಶ ಸಂಖ್ಯೆ)</label><input type="text" id="tcAdmNo" class="form-control form-control-sm"></div>
+                                <div class="col-md-4"><label class="fw-bold">2. Cumulative Record No.</label><input type="text" id="tcCumulativeNo" class="form-control form-control-sm"></div>
+                                <div class="col-md-4">&nbsp;</div>
+
+                                <!-- Student, Father, Mother Names (Kannada & English) -->
+                                <div class="col-md-6 bg-light p-2 border rounded">
+                                    <label class="fw-bold text-primary">3. ವಿದ್ಯಾರ್ಥಿ ಹೆಸರು (ಕನ್ನಡದಲ್ಲಿ)</label>
+                                    <input type="text" id="tcStNameKn" class="form-control form-control-sm fw-bold" placeholder="ಉದಾ: ಅನಿತಾ ಸುರೇಶ ಕರಡಿಗುಡ್ಡಿ">
+                                </div>
+                                <div class="col-md-6 bg-light p-2 border rounded">
+                                    <label class="fw-bold text-primary">Student Name (In English)</label>
+                                    <input type="text" id="tcStNameEn" class="form-control form-control-sm fw-bold" placeholder="eg: ANITA SURESH KARADIGUDDI">
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="fw-bold">14. ತಂದೆಯ ಹೆಸರು (ಕನ್ನಡದಲ್ಲಿ)</label>
+                                    <input type="text" id="tcFatherNameKn" class="form-control form-control-sm" placeholder="ಉದಾ: ಸುರೇಶ">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="fw-bold">Father Name (In English)</label>
+                                    <input type="text" id="tcFatherNameEn" class="form-control form-control-sm" placeholder="eg: SURESH">
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="fw-bold">15. ತಾಯಿಯ ಹೆಸರು (ಕನ್ನಡದಲ್ಲಿ)</label>
+                                    <input type="text" id="tcMotherNameKn" class="form-control form-control-sm" placeholder="ಉದಾ: ನಿಂಗವ್ವ">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="fw-bold">Mother Name (In English)</label>
+                                    <input type="text" id="tcMotherNameEn" class="form-control form-control-sm" placeholder="eg: NINGAVVA">
+                                </div>
+
+                                <div class="col-md-3"><label class="fw-bold">4. Birth Place (ಹುಟ್ಟಿದ ಸ್ಥಳ)</label><input type="text" id="tcBirthPlace" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">5. Taluk (ತಾಲೂಕು)</label><input type="text" id="tcTaluk" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">6. District (ಜಿಲ್ಲೆ)</label><input type="text" id="tcDistrict" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">7. State (ರಾಜ್ಯ)</label><input type="text" id="tcState" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-3"><label class="fw-bold">8. Sex (ಲಿಂಗ)</label><input type="text" id="tcGender" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">9. Nationality</label><input type="text" id="tcNationality" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">10. Religion (ಧರ್ಮ)</label><input type="text" id="tcReligion" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">11. Caste (ಜಾತಿ)</label><input type="text" id="tcCaste" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-3"><label class="fw-bold">12. Sub Caste (ಉಪಜಾತಿ)</label><input type="text" id="tcSubCaste" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">13. Category (ಪ್ರವರ್ಗ)</label><input type="text" id="tcCasteCat" class="form-control form-control-sm"></div>
+                                <div class="col-md-6"><label class="fw-bold">16. Belongs to SC/ST?</label><input type="text" id="tcIsScSt" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-6"><label class="fw-bold">17. Qualified for Promotion? (ತೇರ್ಗಡೆಯಾಗಿದ್ದಾನೆಯೇ?)</label><input type="text" id="tcIsQualified" class="form-control form-control-sm fw-bold text-success"></div>
+                                <div class="col-md-6"><label class="fw-bold">18. DOB Figures (ಅಂಕೆಗಳಲ್ಲಿ ದಿನಾಂಕ)</label><input type="text" id="tcDobFigures" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-6"><label class="fw-bold">DOB Words (ಅಕ್ಷರಗಳಲ್ಲಿ)</label><input type="text" id="tcDobWords" class="form-control form-control-sm"></div>
+                                <div class="col-md-6"><label class="fw-bold">19. Standard Leaving (ಓದುತ್ತಿದ್ದ ತರಗತಿ)</label><input type="text" id="tcClassLeft" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-4"><label class="fw-bold">20. Medium (ಮಾಧ್ಯಮ)</label><input type="text" id="tcMedium" class="form-control form-control-sm"></div>
+                                <div class="col-md-4"><label class="fw-bold">21. Admission Date</label><input type="text" id="tcAdmDate" class="form-control form-control-sm"></div>
+                                <div class="col-md-4"><label class="fw-bold">22. Fees Dues Paid?</label><input type="text" id="tcDuesPaid" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-3"><label class="fw-bold">23. Fee Concession</label><input type="text" id="tcConcession" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">24. Scholarship</label><input type="text" id="tcScholarship" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">25. Medical Examined?</label><input type="text" id="tcMedicalExam" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">26. Last Attendance Date</label><input type="text" id="tcLastAttDate" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-3"><label class="fw-bold">27. Application Date</label><input type="text" id="tcAppDate" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">28. Issue Date</label><input type="text" id="tcIssueDate" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">29. Total Days</label><input type="text" id="tcTotalDays" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">30. Days Attended</label><input type="text" id="tcAttDays" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-12"><label class="fw-bold">31. Character &amp; Conduct (ನಡತೆ)</label><input type="text" id="tcCharacter" class="form-control form-control-sm"></div>
+
+                                <!-- IDs & Aadhaar Numbers -->
+                                <div class="col-md-3 bg-warning bg-opacity-25 p-1 border rounded"><label class="fw-bold text-dark">32. SATS No (ಎಸ್.ಟಿ.ಎಸ್ ನಂ)</label><input type="text" id="tcSatsNo" class="form-control form-control-sm fw-bold"></div>
+                                <div class="col-md-3 bg-info bg-opacity-25 p-1 border rounded"><label class="fw-bold text-primary">33. PEN ID Number</label><input type="text" id="tcPenNo" class="form-control form-control-sm fw-bold"></div>
+                                <div class="col-md-3 bg-danger bg-opacity-25 p-1 border rounded"><label class="fw-bold text-danger">34. APAAR ID Number</label><input type="text" id="tcApaarNo" class="form-control form-control-sm fw-bold"></div>
+                                <div class="col-md-3 p-1 border rounded"><label class="fw-bold">35. Student Aadhaar</label><input type="text" id="tcAadhaarNo" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-6 p-1 border rounded"><label class="fw-bold">36. Father Aadhaar (ತಂದೆಯ ಆಧಾರ್)</label><input type="text" id="tcFatherAadhaarNo" class="form-control form-control-sm" placeholder="12-digit Aadhaar"></div>
+                                <div class="col-md-6 p-1 border rounded"><label class="fw-bold">37. Mother Aadhaar (ತಾಯಿಯ ಆಧಾರ್)</label><input type="text" id="tcMotherAadhaarNo" class="form-control form-control-sm" placeholder="12-digit Aadhaar"></div>
+                            </div>
+                        </div>
+                        <div class="modal-footer py-1">
+                            <button type="button" class="btn btn-secondary btn-sm fw-bold" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="generateTransferCertificatePrint()">
+                                <i class="fa-solid fa-print me-1"></i> Generate TC &amp; Preview Print
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+        document.body.appendChild(modalDiv);
+    }
         
     </script>
 </body>
