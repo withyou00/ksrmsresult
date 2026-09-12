@@ -20041,6 +20041,260 @@
         }
 
 
+
+        // ----------------------------------------------------------------------
+        // KARNATAKA STATE STUDY CERTIFICATE (ವ್ಯಾಸಂಗ ಪ್ರಮಾಣ ಪತ್ರ) 2-PER-A4 ENGINE
+        // ----------------------------------------------------------------------
+
+        function openStudyCertModal(stId = null) {
+            if (!checkLicensePermission("generate study certificate")) return;
+
+            let scModal = document.getElementById('studyCertModal');
+            if (!scModal) {
+                injectStudyCertModalHTML();
+                scModal = document.getElementById('studyCertModal');
+            }
+
+            const modalInst = new bootstrap.Modal(scModal);
+
+            const stSelect = document.getElementById('scStSelect');
+            if (stSelect) {
+                const currentClass = getActiveReportClass();
+                const classStudents = sampleStudents.filter(s => s.className === currentClass);
+                stSelect.innerHTML = classStudents.map(s => `<option value="${s.id}">${s.name} (Adm: ${s.admissionNo||'-'})</option>`).join('');
+                if (stId) stSelect.value = stId;
+            }
+
+            loadStudyCertFormData();
+            modalInst.show();
+        }
+
+        function loadStudyCertFormData() {
+            const stId = document.getElementById('scStSelect')?.value;
+            const st = sampleStudents.find(s => String(s.id) === String(stId)) || sampleStudents[0];
+            if (!st) return;
+
+            const setV = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+
+            const fullCasteStr = `${st.religion || 'ಹಿಂದೂ'} ${st.casteName || ''}`.trim();
+            const regNoStr = `${st.admissionNo || '19'} / ${appSettings.academicYear || '2025-26'}`;
+            const todayStr = new Date().toLocaleDateString('en-GB').replace(/\//g, '.');
+
+            setV('scStName', st.nameKn || st.name || '');
+            setV('scClassSec', `${st.className || '5ನೇ'} - ${appSettings.activeSection || 'A'}`);
+            setV('scReligionCaste', fullCasteStr);
+            setV('scDobFig', cleanDateFormat(st.dob));
+            setV('scDobWords', convertDobToWords(st.dob));
+            setV('scBirthPlace', st.birthPlace || appSettings.cluster || 'ಅಂಬೇವಾಡಿ');
+            setV('scSatsNo', st.sats || '');
+            setV('scBookNo', st.bookNo || '-');
+            setV('scRegNo', regNoStr);
+            setV('scPlace', appSettings.cluster || appSettings.block || 'ತುಮ್ಮರಗುದ್ದಿ');
+            setV('scDate', todayStr);
+            setV('scSchoolName', appSettings.schoolName || '');
+            setV('scBlockDistrict', `ತಾಲೂಕು: ${appSettings.block || ''}, ಜಿಲ್ಲೆ: ${appSettings.district || ''}`);
+            setV('scDiseCode', appSettings.diseCode || '');
+        }
+
+        function generateStudyCertificatePrint() {
+            const data = {
+                stName: getTcVal('scStName'),
+                classSec: getTcVal('scClassSec'),
+                religionCaste: getTcVal('scReligionCaste'),
+                dobFig: getTcVal('scDobFig'),
+                dobWords: getTcVal('scDobWords'),
+                birthPlace: getTcVal('scBirthPlace'),
+                satsNo: getTcVal('scSatsNo'),
+                bookNo: getTcVal('scBookNo'),
+                regNo: getTcVal('scRegNo'),
+                place: getTcVal('scPlace'),
+                date: getTcVal('scDate'),
+                schoolName: getTcVal('scSchoolName'),
+                blockDistrict: getTcVal('scBlockDistrict'),
+                diseCode: getTcVal('scDiseCode')
+            };
+
+            const hmSig = appSettings.hmSigUrl || '';
+            const hmName = appSettings.hmName || '';
+
+            // Single Certificate Template HTML with Passport Photo Box
+            const certCardHtml = `
+                <div class="study-cert-box border border-2 border-dark rounded p-3 bg-white" style="height: 132mm; box-sizing: border-box; position: relative; font-family: 'Anek Kannada', sans-serif;">
+                    <div class="position-absolute top-0 end-0 m-3 border border-dark text-center d-flex justify-content-center align-items-center" style="width: 28mm; height: 35mm; font-size: 0.65rem; color: #555; background:#f8f9fa;">
+                        <div>ಫೋಟೋ ಅಂಟಿಸಿ<br>(Passport Photo)</div>
+                    </div>
+
+                    <div class="text-center mb-3 pe-5 me-4">
+                        <h6 class="fw-bold mb-1 text-decoration-underline fs-6 text-dark">ಜಾತಿ / ಜನ್ಮ ದಾಖಲೆ / ಶಾಲಾ ದಾಖಲಾತಿ</h6>
+                        <h4 class="fw-bold text-primary mb-0 fs-5">ವ್ಯಾಸಂಗ ಪ್ರಮಾಣ ಪತ್ರ</h4>
+                    </div>
+
+                    <div class="lh-lg fs-7 text-start pt-2" style="font-size: 0.92rem !important; line-height: 2.2 !important; text-align: justify;">
+                        ಕುಮಾರ / ರಿ <span class="fw-bold text-primary text-decoration-underline px-2 fs-6">${data.stName}</span> ಇವನು/ಇವಳು ನಮ್ಮ ಶಾಲೆಯಲ್ಲಿ <span class="fw-bold text-decoration-underline px-2">${data.classSec}</span> ತರಗತಿಯಲ್ಲಿ ವ್ಯಾಸಂಗ ಮಾಡಿದ್ದು / ಮಾಡುತ್ತಿದ್ದು, ಇವನ/ಳ ಜಾತಿ <span class="fw-bold text-decoration-underline px-2">${data.religionCaste}</span> ಜನ್ಮದಿನಾಂಕ <span class="fw-bold text-decoration-underline px-2">${data.dobFig}</span> (ಅಕ್ಷರದಲ್ಲಿ) <span class="fw-bold text-primary text-decoration-underline px-2">${data.dobWords}</span> ಜನ್ಮಸ್ಥಳ <span class="fw-bold text-decoration-underline px-2">${data.birthPlace}</span>, SATS ನಂ. <span class="fw-bold text-danger text-decoration-underline px-2">${data.satsNo}</span> ಇರುತ್ತದೆ.<br>
+                        ನಮ್ಮ ಶಾಲಾ ಒಂದನೆಯ ನಂಬರ್ ರಜಿಸ್ಟರ್ ಬುಕ್ ನಂ. <span class="fw-bold text-decoration-underline px-2">${data.bookNo}</span> ರ.ನಂ. <span class="fw-bold text-decoration-underline px-2">${data.regNo}</span> ನೇಯದ್ದರ ಪ್ರಕಾರ ಈ ಪ್ರಮಾಣ ಪತ್ರ ನೀಡಲಾಗಿದೆ.
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-end pt-3 mt-3 fs-8 fw-bold">
+                        <div class="text-start">
+                            <div>ಸ್ಥಳ: <span class="fw-bold text-dark">${data.place}</span></div>
+                            <div>ದಿನಾಂಕ: <span class="fw-bold text-dark">${data.date}</span></div>
+                        </div>
+                        <div class="text-center me-3">
+                            ${hmSig ? `<img src="${hmSig}" style="max-height:30px;" class="mb-1">` : ''}
+                            <div class="fw-bold text-dark fs-7">ಪ್ರಧಾನ ಗುರುಗಳು</div>
+                            <div class="fw-bold text-primary fs-7">${data.schoolName}</div>
+                            <div class="text-muted">${data.blockDistrict}</div>
+                            <div>ಡೈಸ್ ಕೋಡ್ ನಂ: <span class="fw-bold">${data.diseCode}</span></div>
+                        </div>
+                    </div>
+                </div>`;
+
+            // Combine 2 Copies Stacked Vertically on 1 Single A4 Portrait Page!
+            const fullA4Html = `
+                <div id="studyCert2PerA4Paper" style="width: 195mm; margin: 0 auto; box-sizing: border-box; background: #fff;">
+                    <!-- Certificate 1 (Top) -->
+                    ${certCardHtml}
+
+                    <!-- Dashed Cut Line -->
+                    <div class="text-center text-muted fs-8 my-2 no-print" style="border-top: 1.5px dashed #666;">
+                        ✂️ ------------------------------------- ಇಲ್ಲಿ ಕತ್ತರಿಸಿ (Cut Here) ------------------------------------- ✂️
+                    </div>
+
+                    <!-- Certificate 2 (Bottom Copy) -->
+                    ${certCardHtml}
+                </div>`;
+
+            document.getElementById('dynamicPageStyle').innerHTML = `@page { size: A4 portrait !important; margin: 3mm 4mm !important; }`;
+
+            const printCont = document.getElementById('printContainer');
+            if (printCont) {
+                printCont.innerHTML = fullA4Html;
+            }
+
+            const modalEl = document.getElementById('studyCertModal');
+            if (modalEl) {
+                const mInst = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                mInst.hide();
+            }
+
+            document.querySelectorAll('.content-section').forEach(sec => sec.classList.add('d-none'));
+            document.getElementById('reportsSection').classList.remove('d-none');
+            if (printCont) printCont.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function injectStudyCertModalHTML() {
+            const oldModal = document.getElementById('studyCertModal');
+            if (oldModal) oldModal.remove();
+
+            const modalDiv = document.createElement('div');
+            modalDiv.className = 'modal fade';
+            modalDiv.id = 'studyCertModal';
+            modalDiv.tabIndex = -1;
+            modalDiv.setAttribute('aria-hidden', 'true');
+            modalDiv.innerHTML = `
+                <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                    <div class="modal-content border-primary shadow">
+                        <div class="modal-header bg-primary text-white fw-bold py-2">
+                            <h5 class="modal-title fs-6"><i class="fa-solid fa-certificate me-2"></i> ವ್ಯಾಸಂಗ ಪ್ರಮಾಣ ಪತ್ರ (Study Certificate Edit Form)</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-3 fs-8">
+                            <div class="mb-3 bg-light p-2 border rounded">
+                                <label class="form-label fw-bold text-primary mb-1">ವಿದ್ಯಾರ್ಥಿ ಆಯ್ಕೆ ಮಾಡಿ (Select Student):</label>
+                                <select id="scStSelect" class="form-select border-primary fw-bold" onchange="loadStudyCertFormData()"></select>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-md-6"><label class="fw-bold">ವಿದ್ಯಾರ್ಥಿಯ ಹೆಸರು (Student Name)</label><input type="text" id="scStName" class="form-control form-control-sm fw-bold text-primary"></div>
+                                <div class="col-md-3"><label class="fw-bold">ತರಗತಿ ಮತ್ತು ವಿಭಾಗ</label><input type="text" id="scClassSec" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">ಧರ್ಮ ಮತ್ತು ಜಾತಿ</label><input type="text" id="scReligionCaste" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-4"><label class="fw-bold">ಜನ್ಮ ದಿನಾಂಕ (ಅಂಕೆಗಳಲ್ಲಿ)</label><input type="text" id="scDobFig" class="form-control form-control-sm"></div>
+                                <div class="col-md-8"><label class="fw-bold">ಜನ್ಮ ದಿನಾಂಕ (ಅಕ್ಷರಗಳಲ್ಲಿ)</label><input type="text" id="scDobWords" class="form-control form-control-sm fw-bold text-primary"></div>
+
+                                <div class="col-md-4"><label class="fw-bold">ಜನ್ಮ ಸ್ಥಳ (Birth Place)</label><input type="text" id="scBirthPlace" class="form-control form-control-sm"></div>
+                                <div class="col-md-4"><label class="fw-bold">SATS ಸಂಖ್ಯೆ</label><input type="text" id="scSatsNo" class="form-control form-control-sm fw-bold text-danger"></div>
+                                <div class="col-md-4"><label class="fw-bold">ಜನರಲ್ ರಜಿಸ್ಟರ್ ರ.ನಂ.</label><input type="text" id="scRegNo" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-3"><label class="fw-bold">ಬುಕ್ ನಂ.</label><input type="text" id="scBookNo" class="form-control form-control-sm" value="-"></div>
+                                <div class="col-md-3"><label class="fw-bold">ಸ್ಥಳ (Place)</label><input type="text" id="scPlace" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">ದಿನಾಂಕ (Date)</label><input type="text" id="scDate" class="form-control form-control-sm"></div>
+                                <div class="col-md-3"><label class="fw-bold">DISE Code</label><input type="text" id="scDiseCode" class="form-control form-control-sm"></div>
+
+                                <div class="col-md-6"><label class="fw-bold">ಶಾಲೆಯ ಹೆಸರು (School Name)</label><input type="text" id="scSchoolName" class="form-control form-control-sm"></div>
+                                <div class="col-md-6"><label class="fw-bold">ತಾಲೂಕು ಹಾಗೂ ಜಿಲ್ಲೆ</label><input type="text" id="scBlockDistrict" class="form-control form-control-sm"></div>
+                            </div>
+                        </div>
+                        <div class="modal-footer py-1">
+                            <button type="button" class="btn btn-secondary btn-sm fw-bold" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-success btn-sm fw-bold" onclick="generateStudyCertificatePrint()">
+                                <i class="fa-solid fa-print me-1"></i> 2-Per-A4 Page Print (ಮೇಲೆ 1 - ಕೆಳಗೆ 1)
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.appendChild(modalDiv);
+        }
+
+        // Auto-Inject Study Certificate Buttons Everywhere
+        (function injectStudyCertButtonsEverywhere() {
+            function addUI() {
+                const rptBtnGroup = document.querySelector('#reportsSection .card-body .row.g-2');
+                if (rptBtnGroup && !document.getElementById('btnOpenStudyCertReports')) {
+                    const colDiv = document.createElement('div');
+                    colDiv.className = 'col-md-3 mt-2';
+                    colDiv.innerHTML = `
+                        <button class="btn btn-success w-100 fw-bold py-2 fs-8 shadow-sm" id="btnOpenStudyCertReports" onclick="openStudyCertModal()">
+                            <i class="fa-solid fa-certificate me-1"></i> ವ್ಯಾಸಂಗ ಪ್ರಮಾಣ ಪತ್ರ (Study Cert)
+                        </button>`;
+                    rptBtnGroup.appendChild(colDiv);
+                }
+
+                const stBtnGroup = document.querySelector('#studentSection .card-header .d-flex');
+                if (stBtnGroup && !document.getElementById('btnOpenStudyCertStDB')) {
+                    const btn = document.createElement('button');
+                    btn.id = 'btnOpenStudyCertStDB';
+                    btn.className = 'btn btn-success btn-sm fw-bold shadow-sm ms-2';
+                    btn.onclick = function() { openStudyCertModal(); };
+                    btn.innerHTML = `<i class="fa-solid fa-certificate me-1"></i> ವ್ಯಾಸಂಗ ಪತ್ರ`;
+                    stBtnGroup.appendChild(btn);
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', addUI);
+            } else {
+                addUI();
+            }
+        })();
+
+        // Inject Study Cert Button in Student Table Action Column
+        if (typeof renderStudentTable === 'function') {
+            const _baseRenderStTableForCertFinal = renderStudentTable;
+            renderStudentTable = function() {
+                _baseRenderStTableForCertFinal();
+
+                const tbody = document.getElementById('studentTableBody');
+                if (!tbody) return;
+
+                const rows = tbody.querySelectorAll('tr');
+                rows.forEach(tr => {
+                    const actionTd = tr.querySelector('td:last-child');
+                    const editBtn = actionTd?.querySelector('button[onclick*="editStudent"]');
+                    if (actionTd && editBtn) {
+                        const stIdMatch = editBtn.getAttribute('onclick').match(/'([^']+)'/);
+                        if (stIdMatch && stIdMatch[1] && !actionTd.querySelector('.btn-sc-action')) {
+                            const stId = stIdMatch[1];
+                            const scBtn = document.createElement('button');
+                            scBtn.className = 'btn btn-xs btn-outline-primary py-0 px-2 me-1 fw-bold btn-sc-action';
+                            scBtn.onclick = function() { openStudyCertModal(stId); };
+                            scBtn.title = 'ವ್ಯಾಸಂಗ ಪ್ರಮಾಣ ಪತ್ರ (Study Cert)';
+                            scBtn.innerHTML = '<i class="fa-solid fa-certificate"></i> Cert';
+                            actionTd.insertBefore(scBtn, editBtn);
+                        }
+                    }
+                });
+            };
+        }
        
         
     </script>
