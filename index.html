@@ -20219,6 +20219,287 @@
             renderMarksGrid();
         }
  
+
+// ======================================================================
+        // 1st TO 5th (15% FA, 20% SA) & 6th TO 8th (10% FA, 30% SA) EXACT GRADE ENGINE
+        // ======================================================================
+
+        // 1-5 ನೇ ತರಗತಿ ಪತ್ತೆ ಹಚ್ಚುವ ನಿಖರ ಫಂಕ್ಷನ್
+        function isLowerPrimaryClass(cls) {
+            if (!cls) return false;
+            const clean = String(cls).trim().toLowerCase();
+            return clean.includes('1st') || clean.includes('2nd') || clean.includes('3rd') || clean.includes('4th') || clean.includes('5th') ||
+                   clean.startsWith('1') || clean.startsWith('2') || clean.startsWith('3') || clean.startsWith('4') || clean.startsWith('5');
+        }
+
+        // ಎಲ್ಲಾ ಚಾರ್ಟ್‌ಗಳ ನಿಖರ ಗ್ರೇಡ್ ಕ್ಯಾಲ್ಕುಲೇಟರ್
+        getGradeFromScore = function(score, maxScore = 100, hasMarks = true) {
+            if (score === 'CWSN') return 'CWSN';
+            if (!hasMarks || score === undefined || score === null || score === '' || isNaN(score)) return '-';
+            
+            const val = Math.round(parseFloat(score));
+            const max = Math.round(parseFloat(maxScore));
+
+            // 10 Marks Grade Chart (6-8 FA: 10% Converted)
+            if (max === 10) {
+                if (val >= 9) return 'A+';
+                if (val >= 7) return 'A';
+                if (val >= 5) return 'B+';
+                if (val >= 3) return 'B';
+                return 'C';
+            }
+
+            // 15 Marks Grade Chart (1-5 FA: 15% Converted)
+            if (max === 15) {
+                if (val >= 14) return 'A+';
+                if (val >= 11) return 'A';
+                if (val >= 8) return 'B+';
+                if (val >= 5) return 'B';
+                return 'C';
+            }
+
+            // 20 Marks Grade Chart (1-5 SA: 20% Converted)
+            if (max === 20) {
+                if (val >= 18) return 'A+';
+                if (val >= 14) return 'A';
+                if (val >= 10) return 'B+';
+                if (val >= 6) return 'B';
+                return 'C';
+            }
+
+            // 30 Marks Grade Chart (6-8 SA: 30% Converted)
+            if (max === 30) {
+                if (val >= 27) return 'A+';
+                if (val >= 21) return 'A';
+                if (val >= 15) return 'B+';
+                if (val >= 9) return 'B';
+                return 'C';
+            }
+
+            // 50 Marks Grade Chart (Term 1 / Term 2 Total = 50 Marks)
+            if (max === 50) {
+                if (val >= 45) return 'A+';
+                if (val >= 35) return 'A';
+                if (val >= 25) return 'B+';
+                if (val >= 15) return 'B';
+                return 'C';
+            }
+
+            // 100 Marks Grade Chart (Annual / 100 Marks)
+            if (max === 100) {
+                if (val >= 90) return 'A+';
+                if (val >= 70) return 'A';
+                if (val >= 50) return 'B+';
+                if (val >= 30) return 'B';
+                return 'C';
+            }
+
+            // Total Aggregate Percentages (400, 600, 700)
+            const perc = (val / max) * 100;
+            if (perc >= 90) return 'A+';
+            if (perc >= 70) return 'A';
+            if (perc >= 50) return 'B+';
+            if (perc >= 30) return 'B';
+            return 'C';
+        };
+
+        // ಪ್ರೈಮರಿ & ಹೈಯರ್ ಪ್ರೈಮರಿ ಅಂಕಗಳ ಕನ್ವರ್ಷನ್ ಮತ್ತು ಗ್ರೇಡ್ ಎಂಜಿನ್
+        calculateSubjectScores = function(m, isCwsnExempt = false, className = '') {
+            if (isCwsnExempt) {
+                return {
+                    isCwsnExempt: true,
+                    rawFA1: 'CWSN', cFA1: 'CWSN', gFA1: 'CWSN',
+                    rawFA2: 'CWSN', cFA2: 'CWSN', gFA2: 'CWSN',
+                    rawSA1: 'CWSN', cSA1: 'CWSN', gSA1: 'CWSN',
+                    t1Tot: 'CWSN', gT1: 'CWSN',
+                    rawFA3: 'CWSN', cFA3: 'CWSN', gFA3: 'CWSN',
+                    rawFA4: 'CWSN', cFA4: 'CWSN', gFA4: 'CWSN',
+                    rawSA2: 'CWSN', cSA2: 'CWSN', gSA2: 'CWSN',
+                    t2Tot: 'CWSN', gT2: 'CWSN',
+                    subjectGrandTot: 'CWSN', gGrand: 'CWSN',
+                    hasMarks: false
+                };
+            }
+
+            const currentCls = className || (typeof getActiveReportClass === 'function' ? getActiveReportClass() : '') || window.ksrmsState?.activeClass || '';
+            const isLower = isLowerPrimaryClass(currentCls);
+            
+            // 1-5 ನೇ ತರಗತಿಗೆ: FA 15%, SA 20% | 6-8 ನೇ ತರಗತಿಗೆ: FA 10%, SA 30%
+            const faWeight = isLower ? 15 : 10;
+            const saWeight = isLower ? 20 : 30;
+
+            const rawFA1 = (m?.fa1 !== undefined && m?.fa1 !== '') ? parseFloat(m.fa1) : null;
+            const rawFA2 = (m?.fa2 !== undefined && m?.fa2 !== '') ? parseFloat(m.fa2) : null;
+            const rawSA1 = (m?.sa1 !== undefined && m?.sa1 !== '') ? parseFloat(m.sa1) : null;
+            const rawFA3 = (m?.fa3 !== undefined && m?.fa3 !== '') ? parseFloat(m.fa3) : null;
+            const rawFA4 = (m?.fa4 !== undefined && m?.fa4 !== '') ? parseFloat(m.fa4) : null;
+            const rawSA2 = (m?.sa2 !== undefined && m?.sa2 !== '') ? parseFloat(m.sa2) : null;
+
+            const cFA1 = rawFA1 !== null ? Math.round((rawFA1 / 20) * faWeight) : 0;
+            const cFA2 = rawFA2 !== null ? Math.round((rawFA2 / 20) * faWeight) : 0;
+            const cSA1 = rawSA1 !== null ? Math.round((rawSA1 / 50) * saWeight) : 0;
+            const t1Tot = cFA1 + cFA2 + cSA1;
+
+            const cFA3 = rawFA3 !== null ? Math.round((rawFA3 / 20) * faWeight) : 0;
+            const cFA4 = rawFA4 !== null ? Math.round((rawFA4 / 20) * faWeight) : 0;
+            const cSA2 = rawSA2 !== null ? Math.round((rawSA2 / 50) * saWeight) : 0;
+            const t2Tot = cFA3 + cFA4 + cSA2;
+
+            const subjectGrandTot = t1Tot + t2Tot;
+            const hasMarks = (rawFA1 !== null || rawFA2 !== null || rawSA1 !== null || rawFA3 !== null || rawFA4 !== null || rawSA2 !== null);
+
+            return {
+                isCwsnExempt: false,
+                rawFA1, cFA1, gFA1: getGradeFromScore(cFA1, faWeight, rawFA1 !== null),
+                rawFA2, cFA2, gFA2: getGradeFromScore(cFA2, faWeight, rawFA2 !== null),
+                rawSA1, cSA1, gSA1: getGradeFromScore(cSA1, saWeight, rawSA1 !== null),
+                t1Tot, gT1: getGradeFromScore(t1Tot, 50, (rawFA1 !== null || rawFA2 !== null || rawSA1 !== null)),
+                rawFA3, cFA3, gFA3: getGradeFromScore(cFA3, faWeight, rawFA3 !== null),
+                rawFA4, cFA4, gFA4: getGradeFromScore(cFA4, faWeight, rawFA4 !== null),
+                rawSA2, cSA2, gSA2: getGradeFromScore(cSA2, saWeight, rawSA2 !== null),
+                t2Tot, gT2: getGradeFromScore(t2Tot, 50, (rawFA3 !== null || rawFA4 !== null || rawSA2 !== null)),
+                subjectGrandTot, gGrand: getGradeFromScore(subjectGrandTot, 100, hasMarks),
+                hasMarks,
+                isLower,
+                faWeight,
+                saWeight
+            };
+        };
+
+        // Marks Entry ಗ್ರಿಡ್ ಅನ್ನು 1-5 & 6-8 ರ ಕನ್ವರ್ಟೆಡ್ ಮಾರ್ಕ್ಸ್‌ಗೆ ರಿಫ್ರೆಶ್ ಮಾಡುವ ಫಂಕ್ಷನ್
+        renderMarksGrid = function() {
+            const selectedClass = document.getElementById('filterClassMarks') ? document.getElementById('filterClassMarks').value : (window.ksrmsState?.activeClass || '6th Standard');
+            const sub = document.getElementById('selectedSubjectSelect') ? document.getElementById('selectedSubjectSelect').value : 's1';
+            let subText = document.getElementById('selectedSubjectSelect') ? document.getElementById('selectedSubjectSelect').options[document.getElementById('selectedSubjectSelect').selectedIndex].text : 'First Language';
+            subText = getSubjectLabelWithLanguage(sub, subText);
+
+            const tbody = document.getElementById('marksGridBody');
+            const thead = document.getElementById('marksGridHeader');
+            if (!tbody || !thead) return;
+
+            const activeIndicator = document.getElementById('activeSubjectIndicator');
+            if (activeIndicator) activeIndicator.innerText = subText;
+
+            const filtered = selectedClass === 'ALL' ? sampleStudents : sampleStudents.filter(s => s && isSameClass(s.className, selectedClass));
+            const isLowerClass = selectedClass !== 'ALL' && isLowerPrimaryClass(selectedClass);
+            const faLabel = isLowerClass ? '15%' : '10%';
+            const saLabel = isLowerClass ? '20%' : '30%';
+
+            thead.innerHTML = `
+                <tr>
+                    <th rowspan="2" class="align-middle">#</th>
+                    <th rowspan="2" class="align-middle" style="min-width:160px;">${t('ವಿದ್ಯಾರ್ಥಿ ಹೆಸರು', 'Student Name')}</th>
+                    <th colspan="3" class="bg-primary text-white">FA1 (20)</th>
+                    <th colspan="3" class="bg-primary text-white">FA2 (20)</th>
+                    <th colspan="3" class="bg-primary text-white">SA1 (50)</th>
+                    <th class="bg-warning text-dark align-middle">T1 Total (50%)</th>
+                    <th colspan="3" class="bg-info text-dark">FA3 (20)</th>
+                    <th colspan="3" class="bg-info text-dark">FA4 (20)</th>
+                    <th colspan="3" class="bg-info text-dark">SA2 (50)</th>
+                    <th class="bg-warning text-dark align-middle">T2 Total (50%)</th>
+                    <th class="bg-success text-white align-middle">${t('ಒಟ್ಟು ಅಂಕ', 'Grand Total')}</th>
+                </tr>
+                <tr>
+                    <th>Marks</th><th>${faLabel}</th><th>Gr</th>
+                    <th>Marks</th><th>${faLabel}</th><th>Gr</th>
+                    <th>Marks</th><th>${saLabel}</th><th>Gr</th>
+                    <th class="bg-warning text-dark">Total</th>
+                    <th>Marks</th><th>${faLabel}</th><th>Gr</th>
+                    <th>Marks</th><th>${faLabel}</th><th>Gr</th>
+                    <th>Marks</th><th>${saLabel}</th><th>Gr</th>
+                    <th class="bg-warning text-dark">Total</th>
+                    <th colspan="3" class="bg-success text-white">${t('ಫಲಿತಾಂಶ', 'Result')}</th>
+                </tr>`;
+
+            tbody.innerHTML = filtered.map((s, idx) => {
+                const isCwsnExempt = s.cwsnStatus === 'Yes-Exempt';
+                const m = s.marks[sub] || {};
+                const calc = calculateSubjectScores(m, isCwsnExempt, s.className || selectedClass);
+
+                if (isCwsnExempt) {
+                    return `
+                    <tr data-st-id="${s.id}" class="table-danger">
+                        <td>${idx + 1}</td>
+                        <td class="text-start fw-bold ps-2">${s.name} <span class="badge bg-danger ms-1">CWSN</span></td>
+                        <td colspan="20" class="fw-bold text-danger text-center align-middle fs-6">CWSN (Exam Exempted)</td>
+                    </tr>`;
+                }
+
+                return `
+                <tr data-st-id="${s.id}">
+                    <td>${idx + 1}</td>
+                    <td class="text-start fw-bold ps-2">${s.name}</td>
+                    
+                    <td><input type="number" class="mark-input" data-key="fa1" value="${m.fa1!==undefined?m.fa1:''}" oninput="updateStudentMarkInlineFast(this, '${s.id}', '${sub}', 'fa1')" onkeydown="handleGridKeyNav(event, this)"></td>
+                    <td class="col-cfa1">${calc.cFA1}</td><td><span class="badge bg-light text-dark border col-gfa1">${calc.gFA1}</span></td>
+                    
+                    <td><input type="number" class="mark-input" data-key="fa2" value="${m.fa2!==undefined?m.fa2:''}" oninput="updateStudentMarkInlineFast(this, '${s.id}', '${sub}', 'fa2')" onkeydown="handleGridKeyNav(event, this)"></td>
+                    <td class="col-cfa2">${calc.cFA2}</td><td><span class="badge bg-light text-dark border col-gfa2">${calc.gFA2}</span></td>
+                    
+                    <td><input type="number" class="mark-input" data-key="sa1" value="${m.sa1!==undefined?m.sa1:''}" oninput="updateStudentMarkInlineFast(this, '${s.id}', '${sub}', 'sa1')" onkeydown="handleGridKeyNav(event, this)"></td>
+                    <td class="col-csa1">${calc.cSA1}</td><td><span class="badge bg-light text-dark border col-gsa1">${calc.gSA1}</span></td>
+                    
+                    <td class="bg-warning fw-bold col-t1tot">${calc.t1Tot}</td>
+                    
+                    <td><input type="number" class="mark-input" data-key="fa3" value="${m.fa3!==undefined?m.fa3:''}" oninput="updateStudentMarkInlineFast(this, '${s.id}', '${sub}', 'fa3')" onkeydown="handleGridKeyNav(event, this)"></td>
+                    <td class="col-cfa3">${calc.cFA3}</td><td><span class="badge bg-light text-dark border col-gfa3">${calc.gFA3}</span></td>
+                    
+                    <td><input type="number" class="mark-input" data-key="fa4" value="${m.fa4!==undefined?m.fa4:''}" oninput="updateStudentMarkInlineFast(this, '${s.id}', '${sub}', 'fa4')" onkeydown="handleGridKeyNav(event, this)"></td>
+                    <td class="col-cfa4">${calc.cFA4}</td><td><span class="badge bg-light text-dark border col-gfa4">${calc.gFA4}</span></td>
+                    
+                    <td><input type="number" class="mark-input" data-key="sa2" value="${m.sa2!==undefined?m.sa2:''}" oninput="updateStudentMarkInlineFast(this, '${s.id}', '${sub}', 'sa2')" onkeydown="handleGridKeyNav(event, this)"></td>
+                    <td class="col-csa2">${calc.cSA2}</td><td><span class="badge bg-light text-dark border col-gsa2">${calc.gSA2}</span></td>
+                    
+                    <td class="bg-warning fw-bold col-t2tot">${calc.t2Tot}</td>
+                    <td class="fw-bold text-success fs-7 col-grandtot">${calc.subjectGrandTot} (${calc.gGrand})</td>
+                </tr>`;
+            }).join('');
+        };
+
+        // ಲೈವ್ ಇನ್ಪುಟ್ ಬದಲಾವಣೆ ಎಂಜಿನ್
+        updateStudentMarkInlineFast = function(inputEl, stId, sub, testKey) {
+            if (!checkLicensePermission("enter marks")) {
+                inputEl.value = '';
+                return;
+            }
+
+            const st = sampleStudents.find(s => String(s.id) === String(stId));
+            if (!st) return;
+
+            if (!st.marks[sub]) st.marks[sub] = {};
+            st.marks[sub][testKey] = inputEl.value !== '' ? Number(inputEl.value) : '';
+
+            const calc = calculateSubjectScores(st.marks[sub], st.cwsnStatus === 'Yes-Exempt', st.className);
+            const row = inputEl.closest('tr');
+
+            if (row) {
+                const cFa1 = row.querySelector('.col-cfa1'); if (cFa1) cFa1.innerText = calc.cFA1;
+                const gFa1 = row.querySelector('.col-gfa1'); if (gFa1) gFa1.innerText = calc.gFA1;
+                const cFa2 = row.querySelector('.col-cfa2'); if (cFa2) cFa2.innerText = calc.cFA2;
+                const gFa2 = row.querySelector('.col-gfa2'); if (gFa2) gFa2.innerText = calc.gFA2;
+                const cSa1 = row.querySelector('.col-csa1'); if (cSa1) cSa1.innerText = calc.cSA1;
+                const gSa1 = row.querySelector('.col-gsa1'); if (gSa1) gSa1.innerText = calc.gSA1;
+                const t1Tot = row.querySelector('.col-t1tot'); if (t1Tot) t1Tot.innerText = calc.t1Tot;
+
+                const cFa3 = row.querySelector('.col-cfa3'); if (cFa3) cFa3.innerText = calc.cFA3;
+                const gFa3 = row.querySelector('.col-gfa3'); if (gFa3) gFa3.innerText = calc.gFA3;
+                const cFa4 = row.querySelector('.col-cfa4'); if (cFa4) cFa4.innerText = calc.cFA4;
+                const gFa4 = row.querySelector('.col-gfa4'); if (gFa4) gFa4.innerText = calc.gFA4;
+                const cSa2 = row.querySelector('.col-csa2'); if (cSa2) cSa2.innerText = calc.cSA2;
+                const gSa2 = row.querySelector('.col-gsa2'); if (gSa2) gSa2.innerText = calc.gSA2;
+                const t2Tot = row.querySelector('.col-t2tot'); if (t2Tot) t2Tot.innerText = calc.t2Tot;
+
+                const grandTot = row.querySelector('.col-grandtot'); if (grandTot) grandTot.innerText = `${calc.subjectGrandTot} (${calc.gGrand})`;
+            }
+
+            debouncedCloudSync();
+        };
+
+        // ತಕ್ಷಣವೇ ಸ್ಕ್ರೀನ್ ರಿಫ್ರೆಶ್ ಮಾಡಿ
+        if (typeof renderMarksGrid === 'function') {
+            renderMarksGrid();
+        }
+
         
     </script>
 </body>
