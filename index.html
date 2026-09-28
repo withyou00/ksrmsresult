@@ -21623,6 +21623,586 @@ function renderStudyBirthCertificate() {
 
     if (printContainer) printContainer.scrollIntoView({ behavior: 'smooth' });
 }
+
+        // ======================================================================
+// STUDY / CASTE / BIRTH CERTIFICATE (EDIT MODAL + NO-WRAP DUAL PRINT)
+// ======================================================================
+
+// ಪ್ರಮಾಣ ಪತ್ರದ ಎಡಿಟ್ ಫಾರ್ಮ್‌ನಲ್ಲಿ ಡೇಟಾ ಲೋಡ್ ಮಾಡುವ ಫಂಕ್ಷನ್
+function loadStudyCertFormData() {
+    const stId = document.getElementById('certStSelect')?.value;
+    const st = sampleStudents.find(s => String(s.id) === String(stId)) || sampleStudents[0];
+    if (!st) return;
+
+    const setV = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+
+    const isGirl = (detectGender(st.gender) === 'Girl');
+    setV('certPrefixKn', isGirl ? "ಕುಮಾರಿ" : "ಕುಮಾರ");
+    setV('certPrefixEn', isGirl ? "Kumari" : "Master");
+    setV('certPronounKn', isGirl ? "ಇವಳು" : "ಇವನು");
+    setV('certPronounEn', isGirl ? "D/o" : "S/o");
+
+    setV('certStName', st.name || '');
+    setV('certFatherName', st.father || extractFatherFromFullName(st.name) || '');
+    setV('certMotherName', st.mother || '');
+    setV('certClassName', st.className || '');
+    setV('certSection', 'Section A');
+
+    setV('certCasteKn', st.casteName ? st.casteName : (st.casteCat || 'ಸಾಮಾನ್ಯ'));
+    setV('certCasteEn', st.casteCat ? `${st.casteCat}${st.casteName ? ' - ' + st.casteName : ''}` : 'General');
+    setV('certDobFigures', cleanDateFormat(st.dob));
+
+    const dobWords = getFullDobWordsBilingual(st.dob);
+    setV('certDobWordsKn', dobWords.kn);
+    setV('certDobWordsEn', dobWords.en);
+
+    setV('certBookNo', '01');
+    setV('certGrNo', st.admissionNo || '1');
+    setV('certAadhaarNo', st.stAadhaar || '');
+    setV('certSatsNo', st.sats || '');
+    setV('certPlace', appSettings.block || appSettings.district || 'ಬೆಳಗಾವಿ ಗ್ರಾಮೀಣ');
+    setV('certDate', new Date().toLocaleDateString('en-GB'));
+}
+
+// ಪ್ರಮಾಣ ಪತ್ರದ ಎಡಿಟ್ ಮೋಡಲ್ ಓಪನ್ ಮಾಡುವ ಫಂಕ್ಷನ್
+function openStudyCertificateModal(stId = null) {
+    if (!checkLicensePermission("generate study / caste / birth certificate")) return;
+
+    let certModalEl = document.getElementById('studyCertEditModal');
+    if (!certModalEl) {
+        injectStudyCertModalHTML();
+        certModalEl = document.getElementById('studyCertEditModal');
+    }
+
+    const modalInst = new bootstrap.Modal(certModalEl);
+
+    const stSelect = document.getElementById('certStSelect');
+    if (stSelect) {
+        const currentClass = getActiveReportClass();
+        const classStudents = sampleStudents.filter(s => isSameClass(s.className, currentClass));
+        stSelect.innerHTML = (classStudents.length > 0 ? classStudents : sampleStudents).map(s => `<option value="${s.id}">${s.name} (Adm: ${s.admissionNo||'-'})</option>`).join('');
+        if (stId) stSelect.value = stId;
+    }
+
+    loadStudyCertFormData();
+    modalInst.show();
+}
+
+// ಎಡಿಟ್ ಮೋಡಲ್ HTML ಇಂಜೆಕ್ಟ್ ಮಾಡುವ ಫಂಕ್ಷನ್
+function injectStudyCertModalHTML() {
+    const oldModal = document.getElementById('studyCertEditModal');
+    if (oldModal) oldModal.remove();
+
+    const modalDiv = document.createElement('div');
+    modalDiv.className = 'modal fade';
+    modalDiv.id = 'studyCertEditModal';
+    modalDiv.tabIndex = -1;
+    modalDiv.setAttribute('aria-hidden', 'true');
+    modalDiv.innerHTML = `
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-success shadow">
+                <div class="modal-header bg-success text-white fw-bold py-2">
+                    <h5 class="modal-title fs-6"><i class="fa-solid fa-stamp me-2"></i> ಜಾತಿ / ಜನ್ಮ ದಾಖಲೆ / ಪ್ರಮಾಣ ಪತ್ರ - ತಿದ್ದುಪಡಿ ನಮೂನೆ (Edit &amp; Verify)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-3 fs-8">
+                    <div class="mb-3 bg-light p-2 border rounded">
+                        <label class="form-label fw-bold text-success mb-1">ವಿದ್ಯಾರ್ಥಿ ಆಯ್ಕೆ ಮಾಡಿ (Select Student):</label>
+                        <select id="certStSelect" class="form-select border-success fw-bold" onchange="loadStudyCertFormData()"></select>
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-md-2">
+                            <label class="fw-bold">Prefix (Kn)</label>
+                            <input type="text" id="certPrefixKn" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="fw-bold">Prefix (En)</label>
+                            <input type="text" id="certPrefixEn" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="fw-bold text-primary">ವಿದ್ಯಾರ್ಥಿಯ ಪೂರ್ಣ ಹೆಸರು (Student Name) *</label>
+                            <input type="text" id="certStName" class="form-control form-control-sm fw-bold border-primary text-uppercase">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="fw-bold">ತಂದೆಯ ಹೆಸರು (Father Name)</label>
+                            <input type="text" id="certFatherName" class="form-control form-control-sm fw-bold">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="fw-bold">ತಾಯಿಯ ಹೆಸರು (Mother Name)</label>
+                            <input type="text" id="certMotherName" class="form-control form-control-sm fw-bold">
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="fw-bold">ತರಗತಿ (Class)</label>
+                            <input type="text" id="certClassName" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="fw-bold">ವಿಭಾಗ (Section)</label>
+                            <input type="text" id="certSection" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="fw-bold">ಜನ್ಮ ದಿನಾಂಕ (DOB Figures)</label>
+                            <input type="text" id="certDobFigures" class="form-control form-control-sm fw-bold text-danger">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="fw-bold">ಜಾತಿ (ಕನ್ನಡದಲ್ಲಿ / Caste Kn)</label>
+                            <input type="text" id="certCasteKn" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="fw-bold">Caste / Category (In English)</label>
+                            <input type="text" id="certCasteEn" class="form-control form-control-sm">
+                        </div>
+
+                        <div class="col-md-12">
+                            <label class="fw-bold">ಜನ್ಮ ದಿನಾಂಕ ಅಕ್ಷರಗಳಲ್ಲಿ (DOB Words in Kannada)</label>
+                            <input type="text" id="certDobWordsKn" class="form-control form-control-sm fw-bold text-dark">
+                        </div>
+                        <div class="col-md-12">
+                            <label class="fw-bold">DOB Words (In English)</label>
+                            <input type="text" id="certDobWordsEn" class="form-control form-control-sm fw-bold text-dark">
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="fw-bold">ಜನರಲ್ ಬುಕ್ ನಂ.</label>
+                            <input type="text" id="certBookNo" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="fw-bold text-primary">ದಾಖಲಾತಿ ಸಂಖ್ಯೆ (G.R. No)</label>
+                            <input type="text" id="certGrNo" class="form-control form-control-sm fw-bold text-primary">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="fw-bold">ಆಧಾರ್ ಸಂಖ್ಯೆ (Aadhaar)</label>
+                            <input type="text" id="certAadhaarNo" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="fw-bold text-primary">SATS ID Number</label>
+                            <input type="text" id="certSatsNo" class="form-control form-control-sm fw-bold text-primary">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="fw-bold">ಸ್ಥಳ (Place)</label>
+                            <input type="text" id="certPlace" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="fw-bold">ದಿನಾಂಕ (Date)</label>
+                            <input type="text" id="certDate" class="form-control form-control-sm">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-1">
+                    <button type="button" class="btn btn-secondary btn-sm fw-bold" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-success btn-sm fw-bold px-3" onclick="generateVerifiedStudyCertificatePrint()">
+                        <i class="fa-solid fa-print me-1"></i> Generate &amp; Preview Print
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(modalDiv);
+}
+
+// ತಿದ್ದುಪಡಿ ಮಾಡಿದ ಮಾಹಿತಿಯೊಂದಿಗೆ ಪರ್ಫೆಕ್ಟ್ ಫಾರ್ಮ್ಯಾಟ್ ಜನರೇಟ್ ಮಾಡುವ ಫಂಕ್ಷನ್
+function generateVerifiedStudyCertificatePrint() {
+    const getV = id => document.getElementById(id)?.value.trim() || '';
+
+    const data = {
+        prefixKn: getV('certPrefixKn') || 'ಕುಮಾರಿ',
+        prefixEn: getV('certPrefixEn') || 'Kumari',
+        stName: getV('certStName'),
+        fatherName: getV('certFatherName') || '-',
+        motherName: getV('certMotherName') || '-',
+        pronounKn: getV('certPronounKn') || 'ಇವಳು',
+        pronounEn: getV('certPronounEn') || 'D/o',
+        className: getV('certClassName'),
+        section: getV('certSection') || 'Section A',
+        casteKn: getV('certCasteKn'),
+        casteEn: getV('certCasteEn'),
+        dobFig: getV('certDobFigures'),
+        dobWordsKn: getV('certDobWordsKn'),
+        dobWordsEn: getV('certDobWordsEn'),
+        bookNo: getV('certBookNo') || '01',
+        grNo: getV('certGrNo') || '1',
+        aadhaarNo: getV('certAadhaarNo') || '-',
+        satsNo: getV('certSatsNo') || '-',
+        place: getV('certPlace') || 'ಬೆಳಗಾವಿ ಗ್ರಾಮೀಣ',
+        date: getV('certDate') || new Date().toLocaleDateString('en-GB')
+    };
+
+    const hmName = appSettings.hmName || 'ಮುಖ್ಯೋಪಾಧ್ಯಾಯರು';
+    const hmSig = appSettings.hmSigUrl || '';
+    const showSig = (appSettings.showDigitalSigs !== 'No');
+
+    document.getElementById('dynamicPageStyle').innerHTML = `@page { size: A4 portrait !important; margin: 4mm 5mm !important; }`;
+
+    const certHtml = `
+        <div class="dual-cert-page-container" id="studyBirthCertificatePaper" style="
+            width: 100%;
+            max-width: 195mm;
+            margin: 0 auto;
+            background: #ffffff;
+            box-sizing: border-box;
+            font-family: 'Anek Kannada', 'Poppins', sans-serif;
+            color: #000000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        ">
+            <!-- ============================================================== -->
+            <!-- 1. TOP BOX: KANNADA CERTIFICATE                                -->
+            <!-- ============================================================== -->
+            <div style="
+                border: 2px solid #000000;
+                padding: 12px 16px;
+                box-sizing: border-box;
+                border-radius: 4px;
+                position: relative;
+                min-height: 128mm;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                background: #ffffff;
+            ">
+                <div>
+                    <!-- Header Title & Photo Box -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                        <div style="width: 28mm;">&nbsp;</div>
+                        <div style="border: 2px solid #000000; padding: 3px 20px; text-align: center; border-radius: 4px; background: #fdfdfd; margin-top: 2px;">
+                            <h5 style="margin: 0; font-weight: 800; font-size: 1.05rem; letter-spacing: 0.5px; color: #000;">
+                                ಜಾತಿ/ ಜನ್ಮ ದಾಖಲೆ/ ಶಾಲಾ ದಾಖಲಾತಿ/ ಪ್ರಮಾಣ ಪತ್ರ
+                            </h5>
+                        </div>
+                        <!-- Photo Box -->
+                        <div style="width: 28mm; height: 32mm; border: 1.5px dashed #333; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 0.6rem; color: #444; background: #fafafa; border-radius: 3px; line-height: 1.3;">
+                            <span>ಪಾಸ್‌ಪೋರ್ಟ್ ಅಳತೆಯ<br>ಭಾವಚಿತ್ರ</span>
+                        </div>
+                    </div>
+
+                    <!-- Single Line Dotted Form Body (Never Line-breaks Name!) -->
+                    <div style="font-size: 0.88rem; line-height: 2.15; color: #000;" class="mt-1">
+                        
+                        <!-- Line 1: Student, Father & Mother Name -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px; overflow: hidden;">
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0;">${data.prefixKn}&nbsp;/&nbsp;ರಿ :</span>
+                            <span style="flex-grow: 1; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; color: #002b80; padding: 0 4px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                ${data.stName}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 6px;">ತಂದೆ :</span>
+                            <span style="flex-grow: 0.8; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 4px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                ${data.fatherName}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 6px;">ತಾಯಿ :</span>
+                            <span style="flex-grow: 0.8; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 4px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                ${data.motherName}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 6px;">${data.pronounKn}</span>
+                        </div>
+
+                        <!-- Line 2: Class & Section -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px;">
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0;">ನಮ್ಮ ಶಾಲೆಯಲ್ಲಿ</span>
+                            <span style="flex-grow: 1; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 6px;">
+                                ${data.className}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin: 0 4px;">ರಲ್ಲಿ</span>
+                            <span style="flex-grow: 0.5; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 6px;">
+                                ${data.section}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 4px;">ವಿಭಾಗದಲ್ಲಿ ಓದಿದ್ದು/ ಓದುತ್ತಿದ್ದು</span>
+                        </div>
+
+                        <!-- Line 3: Caste & DOB Figures -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px;">
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0;">ಇವನ/ಳ ಜಾತಿ :</span>
+                            <span style="flex-grow: 1; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 6px;">
+                                ${data.casteKn}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 10px;">ಜನ್ಮ ದಿನಾಂಕ :</span>
+                            <span style="flex-grow: 1; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; color: #b30000; font-size: 0.94rem; padding: 0 6px;">
+                                ${data.dobFig}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 6px;">ಇರುತ್ತದೆ.</span>
+                        </div>
+
+                        <!-- Line 4: DOB in Words -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px;">
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0;">(ಅಕ್ಷರದಲ್ಲಿ) :</span>
+                            <span style="flex-grow: 1; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; color: #111; padding: 0 6px;">
+                                ${data.dobWordsKn}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 6px;">ಇರುತ್ತದೆ.</span>
+                        </div>
+
+                        <!-- Line 5: Admission Record -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px; flex-wrap: wrap;">
+                            <span style="font-weight: bold; white-space: nowrap;">ಮೇಲೆ ತಿಳಿಸಲಾದ ದಾಖಲಾತಿಯು ನಮ್ಮ ಶಾಲಾ ಒಂದನೆಯ ನಂಬರ್ ರಜಿಸ್ಟರ್ ಬುಕ್ ನಂ.</span>
+                            <span style="width: 50px; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; margin: 0 4px;">
+                                ${data.bookNo}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap;">ದಾ.ಸಂ.</span>
+                            <span style="width: 70px; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; color: #002b80; margin: 0 4px;">
+                                ${data.grNo}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap;">ನೆಯದ್ದರ ಪ್ರಕಾರ ಇರುವುದೆಂದು ಪ್ರಮಾಣೀಕರಿಸಿದ ಈ ಪತ್ರ ನೀಡಲಾಗಿದೆ.</span>
+                        </div>
+                    </div>
+
+                    <!-- Aadhaar & SATS Boxes -->
+                    <div style="display: flex; justify-content: space-between; margin-top: 8px; gap: 15px;">
+                        <div style="flex: 1; border: 1.5px solid #000; padding: 2px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem;">
+                            <span style="font-weight: bold;">ಆಧಾರ್ ನಂ :</span>
+                            <span style="font-weight: bold; letter-spacing: 1px;">${data.aadhaarNo}</span>
+                        </div>
+                        <div style="flex: 1; border: 1.5px solid #000; padding: 2px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem;">
+                            <span style="font-weight: bold;">ಎಸ್.ಟಿ.ಎಸ್. ನಂ :</span>
+                            <span style="font-weight: bold; color: #002b80; letter-spacing: 1px;">${data.satsNo}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer with Seal & Sign -->
+                <div style="margin-top: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; font-size: 0.85rem; font-weight: bold;">
+                        <div style="line-height: 1.8; text-align: left;">
+                            <div>ಸ್ಥಳ : <span style="font-weight: bold;">${data.place}</span></div>
+                            <div>ದಿನಾಂಕ : <span style="font-weight: bold;">${data.date}</span></div>
+                        </div>
+
+                        <!-- Center Round Seal Placeholder -->
+                        <div style="text-align: center; display: flex; flex-direction: column; align-items: center;">
+                            <div class="seal-circle-placeholder" style="width: 48px !important; height: 48px !important; border: 1.5px dashed #555; font-size: 0.54rem !important; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center; color: #444;">
+                                ಶಾಲಾ ಮೊಹರು<br>School Seal
+                            </div>
+                        </div>
+
+                        <!-- Right Headmaster Signature Block -->
+                        <div style="text-align: center; min-width: 180px;">
+                            <div style="min-height: 30px;" class="d-flex align-items-end justify-content-center mb-1">
+                                ${showSig && hmSig ? `<img src="${hmSig}" style="max-height: 30px; max-width: 130px; object-fit: contain;">` : '<span style="color: transparent;">&nbsp;</span>'}
+                            </div>
+                            <div style="border-top: 1.5px solid #000; padding-top: 2px;">
+                                <div style="font-size: 0.85rem; font-weight: bold;">${hmName}</div>
+                                <div style="font-size: 0.85rem; font-weight: bold;">ಮುಖ್ಯೋಪಾಧ್ಯಾಯರು</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================== -->
+            <!-- 2. BOTTOM BOX: ENGLISH CERTIFICATE                             -->
+            <!-- ============================================================== -->
+            <div style="
+                border: 2px solid #000000;
+                padding: 12px 16px;
+                box-sizing: border-box;
+                border-radius: 4px;
+                position: relative;
+                min-height: 128mm;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                background: #ffffff;
+            ">
+                <div>
+                    <!-- Header Title & Photo Box -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                        <div style="width: 28mm;">&nbsp;</div>
+                        <div style="border: 2px solid #000000; padding: 3px 20px; text-align: center; border-radius: 4px; background: #fdfdfd; margin-top: 2px;">
+                            <h5 style="margin: 0; font-weight: 800; font-size: 1.05rem; letter-spacing: 0.5px; color: #000;">
+                                CASTE / BIRTH / SCHOOL STUDY CERTIFICATE
+                            </h5>
+                        </div>
+                        <!-- Photo Box -->
+                        <div style="width: 28mm; height: 32mm; border: 1.5px dashed #333; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 0.6rem; color: #444; background: #fafafa; border-radius: 3px; line-height: 1.3;">
+                            <span>Passport Size<br>Photo</span>
+                        </div>
+                    </div>
+
+                    <!-- Single Line Dotted Form Body (Never Line-breaks Name!) -->
+                    <div style="font-size: 0.88rem; line-height: 2.15; color: #000;" class="mt-1">
+                        
+                        <!-- Line 1: Student, Father & Mother Name -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px; overflow: hidden;">
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0;">${data.prefixEn} :</span>
+                            <span style="flex: 1.2; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; color: #002b80; padding: 0 4px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                ${data.stName}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 6px;">${data.pronounEn} :</span>
+                            <span style="flex: 0.8; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 4px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                ${data.fatherName}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 6px;">Mother :</span>
+                            <span style="flex: 0.8; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 4px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                ${data.motherName}
+                            </span>
+                        </div>
+
+                        <!-- Line 2: School, Class & Section -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px;">
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0;">is / was a bonafide student of our school studying in</span>
+                            <span style="flex-grow: 1; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 6px;">
+                                ${data.className}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin: 0 4px;">Section</span>
+                            <span style="flex-grow: 0.5; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 6px;">
+                                A
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 4px;">.</span>
+                        </div>
+
+                        <!-- Line 3: Caste & DOB Figures -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px;">
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0;">His / Her Caste is :</span>
+                            <span style="flex-grow: 1; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; padding: 0 6px;">
+                                ${data.casteEn}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 10px;">and Date of Birth is :</span>
+                            <span style="flex-grow: 1; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; color: #b30000; font-size: 0.94rem; padding: 0 6px;">
+                                ${data.dobFig}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 4px;">.</span>
+                        </div>
+
+                        <!-- Line 4: DOB in Words -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px;">
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0;">(In Words) :</span>
+                            <span style="flex-grow: 1; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; color: #111; padding: 0 6px;">
+                                ${data.dobWordsEn}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap; flex-shrink: 0; margin-left: 4px;">.</span>
+                        </div>
+
+                        <!-- Line 5: Admission Record -->
+                        <div style="display: flex; align-items: flex-end; width: 100%; margin-bottom: 3px; flex-wrap: wrap;">
+                            <span style="font-weight: bold; white-space: nowrap;">This Certificate is issued as per the entries in our School General Admission Register Book No.</span>
+                            <span style="width: 50px; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; margin: 0 4px;">
+                                ${data.bookNo}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap;">G.R. No. :</span>
+                            <span style="width: 70px; border-bottom: 1.5px dotted #000; text-align: center; font-weight: bold; color: #002b80; margin: 0 4px;">
+                                ${data.grNo}
+                            </span>
+                            <span style="font-weight: bold; white-space: nowrap;">.</span>
+                        </div>
+                    </div>
+
+                    <!-- Aadhaar & SATS Boxes -->
+                    <div style="display: flex; justify-content: space-between; margin-top: 8px; gap: 15px;">
+                        <div style="flex: 1; border: 1.5px solid #000; padding: 2px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem;">
+                            <span style="font-weight: bold;">Aadhaar No :</span>
+                            <span style="font-weight: bold; letter-spacing: 1px;">${data.aadhaarNo}</span>
+                        </div>
+                        <div style="flex: 1; border: 1.5px solid #000; padding: 2px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem;">
+                            <span style="font-weight: bold;">SATS ID No :</span>
+                            <span style="font-weight: bold; color: #002b80; letter-spacing: 1px;">${data.satsNo}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer with Seal & Sign -->
+                <div style="margin-top: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; font-size: 0.85rem; font-weight: bold;">
+                        <div style="line-height: 1.8; text-align: left;">
+                            <div>Place : <span style="font-weight: bold;">${data.place}</span></div>
+                            <div>Date : <span style="font-weight: bold;">${data.date}</span></div>
+                        </div>
+
+                        <!-- Center Round Seal Placeholder -->
+                        <div style="text-align: center; display: flex; flex-direction: column; align-items: center;">
+                            <div class="seal-circle-placeholder" style="width: 48px !important; height: 48px !important; border: 1.5px dashed #555; font-size: 0.54rem !important; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center; color: #444;">
+                                School Seal
+                            </div>
+                        </div>
+
+                        <!-- Right Headmaster Signature Block -->
+                        <div style="text-align: center; min-width: 180px;">
+                            <div style="min-height: 30px;" class="d-flex align-items-end justify-content-center mb-1">
+                                ${showSig && hmSig ? `<img src="${hmSig}" style="max-height: 30px; max-width: 130px; object-fit: contain;">` : '<span style="color: transparent;">&nbsp;</span>'}
+                            </div>
+                            <div style="border-top: 1.5px solid #000; padding-top: 2px;">
+                                <div style="font-size: 0.85rem; font-weight: bold;">${hmName}</div>
+                                <div style="font-size: 0.85rem; font-weight: bold;">HEADMASTER</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const printContainer = document.getElementById('printContainer');
+    if (printContainer) {
+        printContainer.innerHTML = certHtml;
+    }
+
+    // ಎಡಿಟ್ ಮೋಡಲ್ ಮುಚ್ಚುವುದು
+    const editModalEl = document.getElementById('studyCertEditModal');
+    if (editModalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(editModalEl) || new bootstrap.Modal(editModalEl);
+        modalInstance.hide();
+    }
+
+    document.querySelectorAll('.content-section').forEach(sec => sec.classList.add('d-none'));
+    document.getElementById('reportsSection').classList.remove('d-none');
+    
+    document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+    const rptNavBtn = document.querySelectorAll('.nav-tab-btn')[4];
+    if (rptNavBtn) rptNavBtn.classList.add('active');
+
+    if (printContainer) printContainer.scrollIntoView({ behavior: 'smooth' });
+}
+
+// ಡೈರೆಕ್ಟ್ ಆಗಿ ಎಡಿಟ್ ಮೋಡಲ್ ಓಪನ್ ಆಗುವಂತೆ ಲಿಂಕ್ ಮಾಡುವುದು
+renderStudyBirthCertificate = function() {
+    openStudyCertificateModal();
+};
+
+// UI ಬಟನ್ ಇಂಜೆಕ್ಷನ್ ಅಪ್ಡೇಟ್
+(function injectCertificateButtonsWithModal() {
+    function refreshButtons() {
+        const rptBtnRow = document.querySelector('#reportsSection .card-body .row.g-2');
+        if (rptBtnRow && !document.getElementById('btnOpenStudyBirthCert')) {
+            const certCol = document.createElement('div');
+            certCol.className = 'col-md-3 mt-2';
+            certCol.innerHTML = `
+                <button class="btn btn-outline-success text-dark w-100 fw-bold py-2 fs-8 shadow-sm" id="btnOpenStudyBirthCert" onclick="openStudyCertificateModal()">
+                    <i class="fa-solid fa-stamp text-success me-1"></i> ಜಾತಿ/ಜನ್ಮ ದಾಖಲೆ (Study Certificate)
+                </button>`;
+            rptBtnRow.appendChild(certCol);
+        }
+
+        const tbody = document.getElementById('studentTableBody');
+        if (tbody) {
+            const rows = tbody.querySelectorAll('tr');
+            rows.forEach(tr => {
+                const actionTd = tr.querySelector('td:last-child');
+                const editBtn = actionTd?.querySelector('button[onclick*="editStudent"]');
+                if (actionTd && editBtn && !actionTd.querySelector('.btn-cert-action')) {
+                    const stIdMatch = editBtn.getAttribute('onclick').match(/'([^']+)'/);
+                    if (stIdMatch && stIdMatch[1]) {
+                        const stId = stIdMatch[1];
+                        const certBtn = document.createElement('button');
+                        certBtn.className = 'btn btn-xs btn-outline-info text-dark py-0 px-1 me-1 fw-bold btn-cert-action';
+                        certBtn.onclick = function() {
+                            openStudyCertificateModal(stId);
+                        };
+                        certBtn.title = 'ಜಾತಿ / ಜನ್ಮ ದಾಖಲೆ ಪ್ರಮಾಣ ಪತ್ರ ತಿದ್ದಿ ಮುದ್ರಿಸಿ';
+                        certBtn.innerHTML = '<i class="fa-solid fa-stamp"></i> Cert';
+                        actionTd.insertBefore(certBtn, editBtn);
+                    }
+                }
+            });
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', refreshButtons);
+    } else {
+        refreshButtons();
+    }
+})();
         
     </script>
 </body>
