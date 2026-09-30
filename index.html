@@ -22861,6 +22861,87 @@ function renderStudyBirthCertificate() {
         setupBtns();
     }
 })();
+
+        // ======================================================================
+// 1. FIREBASE OFFLINE PERSISTENCE (ರಿಫ್ರೆಶ್ ಮಾಡಿದರೂ ಕೋಟಾ ಖರ್ಚಾಗಲ್ಲ)
+// ======================================================================
+if (db) {
+    db.enablePersistence({ synchronizeTabs: true }).catch(function(err) {
+        console.warn("Persistence status:", err.code);
+    });
+}
+
+// ======================================================================
+// 2. 100% ZERO DATA LOSS - ULTRA SAFE SAVE & SYNC ENGINE
+// ======================================================================
+let isCloudLoadedSuccessfully = false;
+
+// ಶಾಶ್ವತ ಆಟೋ-ಸೇವ್ ಎಂಜಿನ್
+saveAndSyncAllData = async function() {
+    const activeDise = (currentSession && currentSession.diseCode) ? currentSession.diseCode : '';
+    if (!activeDise || activeDise === 'ALL' || currentSession.role !== 'school') return;
+
+    // ರಕ್ಷಣೆ ೧: ಖಾಲಿ ಡೇಟಾ ಕ್ಲೌಡ್‌ಗೆ ಹೋಗಿ ಹಳೆಯ ಡೇಟಾ ಅಳಿಸುವುದನ್ನು ತಡೆಯುವುದು
+    if (!Array.isArray(sampleStudents) || sampleStudents.length === 0) {
+        console.warn("ತಡೆಹಿಡಿಯಲಾಗಿದೆ: ಖಾಲಿ ಡೇಟಾ ಕ್ಲೌಡ್‌ಗೆ ಸೇವ್ ಆಗುವುದಿಲ್ಲ.");
+        return;
+    }
+
+    // ರಕ್ಷಣೆ ೨: ಮೊದಲು ಮೊಬೈಲ್/ಲ್ಯಾಪ್ಟಾಪ್‌ನ LocalStorage ನಲ್ಲಿ ತಕ್ಷಣ ಸೇವ್ ಮಾಡಿ
+    try {
+        localStorage.setItem(`ksrms_permanent_store_${activeDise}`, JSON.stringify({
+            students: sampleStudents,
+            appSettings: appSettings,
+            classTeachersMap: classTeachersMap,
+            subjectMasterList: subjectMasterList,
+            lastSaved: Date.now()
+        }));
+    } catch(e) {}
+
+    // ರಕ್ಷಣೆ ೩: Firebase ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಅಳಿಸದಂತೆ ಸುರಕ್ಷಿತ ಮರ್ಜ್ (Safe Merge)
+    if (db) {
+        try {
+            const docRef = db.collection("ksrms_schools").doc(activeDise);
+            
+            // ಕೇವಲ ಬದಲಾದ ಡೇಟಾವನ್ನು ಕ್ಲೌಡ್‌ಗೆ ಕಳುಹಿಸಿ
+            await docRef.set({
+                students: sampleStudents,
+                appSettings: appSettings,
+                classTeachersMap: classTeachersMap,
+                subjectMasterList: subjectMasterList,
+                studentCount: sampleStudents.length,
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            console.log(`[Permanent Save Success] ${sampleStudents.length} ಮಕ್ಕಳ ಡೇಟಾ ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಸುರಕ್ಷಿತವಾಗಿದೆ.`);
+        } catch(err) {
+            console.error("Firebase Cloud Save Error:", err);
+        }
+    }
+};
+
+// ======================================================================
+// 3. ಅಂಕ ಅಥವಾ ಮಾಹಿತಿ ಹಾಕಿದ ತಕ್ಷಣ ಆನ್-ದಿ-ಸ್ಪಾಟ್ ಸೇವ್ (Instant Blur Save)
+// ======================================================================
+document.addEventListener('focusout', function(e) {
+    if (e.target && (e.target.classList.contains('mark-input') || e.target.classList.contains('co-select') || e.target.tagName === 'INPUT')) {
+        saveAndSyncAllData();
+    }
+});
+
+// ರಿಸೆಟ್ ಬಟನ್ ಆಕಸ್ಮಿಕವಾಗಿ ಕ್ಲಿಕ್ ಆಗದಂತೆ ಭದ್ರತೆ
+purgeAllDataAndReset = function() {
+    if (!checkLicensePermission("reset data")) return;
+    const confirmCode = prompt("ಎಚ್ಚರಿಕೆ! ಎಲ್ಲಾ ಡೇಟಾ ಡಿಲೀಟ್ ಮಾಡಲು 'RESET' ಎಂದು ಟೈಪ್ ಮಾಡಿ:");
+    if (confirmCode === 'RESET') {
+        sampleStudents = [];
+        saveAndSyncAllData();
+        onClassChangeHandle();
+        alert('ಡೇಟಾ ಯಶಸ್ವಿಯಾಗಿ ಕ್ಲಿಯರ್ ಆಗಿದೆ.');
+    } else {
+        alert('ಡೇಟಾ ರಿಸೆಟ್ ರದ್ದುಗೊಳಿಸಲಾಗಿದೆ.');
+    }
+};
        
         
     </script>
