@@ -23147,6 +23147,138 @@ function restoreSchoolDataFromBackup(event) {
         injectUI();
     }
 })();
+
+        // ======================================================================
+// 100% COMPLETE BACKUP & RESTORE ENGINE (WITH ALL MARKS & TEACHER DETAILS)
+// ======================================================================
+
+// ೧. ಪೂರ್ಣ ಡೇಟಾ ಡೌನ್‌ಲೋಡ್ ಮಾಡುವ ಫಂಕ್ಷನ್ (Backup)
+function downloadCompleteSchoolBackup() {
+    if (!checkLicensePermission("download school data backup")) return;
+
+    if (!Array.isArray(sampleStudents) || sampleStudents.length === 0) {
+        return alert("ಬ್ಯಾಕಪ್ ಮಾಡಲು ಯಾವುದೇ ವಿದ್ಯಾರ್ಥಿಗಳ ವಿವರಗಳಿಲ್ಲ!");
+    }
+
+    // ಶಾಲೆಯ ಪ್ರತಿಯೊಂದು ಮಾಹಿತಿಯನ್ನು ಒಟ್ಟುಗೂಡಿಸುವುದು
+    const fullBackupPackage = {
+        software: "KSRMS_V3.2",
+        exportDate: new Date().toLocaleString('en-GB'),
+        schoolInfo: {
+            schoolName: appSettings.schoolName,
+            diseCode: appSettings.diseCode,
+            academicYear: appSettings.academicYear,
+            hmName: appSettings.hmName,
+            block: appSettings.block,
+            district: appSettings.district
+        },
+        totalStudentsCount: sampleStudents.length,
+        appSettings: appSettings,
+        classTeachersMap: classTeachersMap,
+        subjectMasterList: subjectMasterList,
+        studentsDataWithMarks: sampleStudents // ಇದರಲ್ಲಿ ಎಲ್ಲಾ ಮಕ್ಕಳ ಹೆಸರು ಹಾಗೂ ಎಲ್ಲಾ ಪರೀಕ್ಷಾ ಅಂಕಗಳಿರುತ್ತವೆ
+    };
+
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(fullBackupPackage, null, 2));
+    const downloadAnchor = document.createElement('a');
+    const fileName = `KSRMS_Full_Backup_${appSettings.diseCode}_${appSettings.academicYear}_${Date.now()}.json`;
+
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", fileName);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+
+    alert(`✅ ಪೂರ್ಣ ಬ್ಯಾಕಪ್ ಯಶಸ್ವಿಯಾಗಿದೆ!\n\n• ಒಟ್ಟು ವಿದ್ಯಾರ್ಥಿಗಳು: ${sampleStudents.length}\n• ಎಲ್ಲಾ ಪರೀಕ್ಷಾ ಅಂಕಗಳು ಸೇರಿವೆ\n• ಶಿಕ್ಷಕರ ವಿವರಗಳು ಸೇರಿವೆ\n\nಫೈಲ್: "${fileName}" ನಿಮ್ಮ ಡಿವೈಸ್‌ನಲ್ಲಿ ಸೇವ್ ಆಗಿದೆ.`);
+}
+
+// ೨. JSON ಫೈಲ್ ಅಪ್ಲೋಡ್ ಮಾಡಿ ಮರುಸ್ಥಾಪಿಸುವ ಫಂಕ್ಷನ್ (Restore)
+function restoreSchoolDataFromBackup(event) {
+    if (!checkLicensePermission("restore school data backup")) return;
+
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedData = JSON.parse(e.target.result);
+
+            // ಫೈಲ್ ಸರಿಯಾಗಿದೆಯೇ ಎಂದು ಪರಿಶೀಲನೆ
+            const studentsList = importedData.studentsDataWithMarks || importedData.students;
+
+            if (!studentsList || !Array.isArray(studentsList)) {
+                return alert("⚠️ ಅಮಾನ್ಯ ಬ್ಯಾಕಪ್ ಫೈಲ್! ಇದರಲ್ಲಿ ಮಕ್ಕಳ ಅಂಕಗಳು ಹಾಗೂ ವಿವರಗಳಿಲ್ಲ.");
+            }
+
+            const confirmMsg = `ಖಚಿತವಾಗಿ ಈ ಬ್ಯಾಕಪ್ ಡೇಟಾವನ್ನು ಮರುಸ್ಥಾಪಿಸಬೇಕೇ (Restore)?\n\n` +
+                               `🏫 ಶಾಲೆ: ${importedData.schoolInfo?.schoolName || importedData.schoolName || '-'}\n` +
+                               `🔢 DISE Code: ${importedData.schoolInfo?.diseCode || importedData.diseCode || '-'}\n` +
+                               `📅 ಶೈಕ್ಷಣಿಕ ವರ್ಷ: ${importedData.schoolInfo?.academicYear || importedData.academicYear || '-'}\n` +
+                               `👥 ಒಟ್ಟು ವಿದ್ಯಾರ್ಥಿಗಳು: ${studentsList.length}\n\n` +
+                               `ಇದನ್ನು ಮರುಸ್ಥಾಪಿಸಿದರೆ ಹಳೆಯ ಎಲ್ಲಾ ಮಕ್ಕಳ ಹೆಸರು, ಅಂಕಗಳು ಹಾಗೂ ಸೆಟ್ಟಿಂಗ್ಸ್‌ಗಳು ಸಾಫ್ಟ್‌ವೇರ್‌ನಲ್ಲಿ ಲೋಡ್ ಆಗುತ್ತವೆ.`;
+
+            if (confirm(confirmMsg)) {
+                // ಎಲ್ಲಾ ಡೇಟಾವನ್ನು ಸಾಫ್ಟ್‌ವೇರ್‌ಗೆ ತುಂಬುವುದು
+                sampleStudents = studentsList;
+                if (importedData.appSettings) appSettings = { ...appSettings, ...importedData.appSettings };
+                if (importedData.classTeachersMap) classTeachersMap = importedData.classTeachersMap;
+                if (importedData.subjectMasterList) subjectMasterList = importedData.subjectMasterList;
+
+                // ಕ್ಲೌಡ್ ಮತ್ತು ಲೋಕಲ್ ಸ್ಟೋರೇಜ್‌ಗೆ ಸೇವ್ ಮಾಡುವುದು
+                saveAndSyncAllData();
+                onClassChangeHandle();
+                renderSubjectTable();
+
+                alert(`🎉 ಅಭಿನಂದನೆಗಳು! ಎಲ್ಲಾ ಮಕ್ಕಳ ಹೆಸರು, ಅಂಕಗಳು ಮತ್ತು ಶಿಕ್ಷಕರ ವಿವರಗಳು ಯಶಸ್ವಿಯಾಗಿ ಮರುಸ್ಥಾಪನೆಗೊಂಡಿವೆ.`);
+            }
+        } catch(err) {
+            console.error("Restore Error:", err);
+            alert("ಫೈಲ್ ಓದಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಸರಿಯಾದ .json ಬ್ಯಾಕಪ್ ಫೈಲ್ ಹಾಕಿ.");
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+}
+
+// ೩. Students Database ಮತ್ತು Settings ನಲ್ಲಿ ಬಟನ್‌ಗಳನ್ನು ನೇರವಾಗಿ ತೋರಿಸುವ ಕೋಡ್
+(function injectBackupButtonsEverywhere() {
+    function setupUI() {
+        // Students Database ಹೆಡರ್ ಬಟನ್‌ಗಳ ಪಕ್ಕದಲ್ಲಿ
+        const stHeaderGroup = document.querySelector('#studentSection .card-header .d-flex');
+        if (stHeaderGroup && !document.getElementById('btnGroupBackupRestoreStDB')) {
+            const div = document.createElement('div');
+            div.id = 'btnGroupBackupRestoreStDB';
+            div.className = 'd-flex gap-1 ms-2';
+            div.innerHTML = `
+                <button type="button" class="btn btn-outline-light btn-sm fw-bold shadow-sm" onclick="downloadCompleteSchoolBackup()" title="ಎಲ್ಲಾ ಅಂಕಗಳು ಮತ್ತು ಮಕ್ಕಳ ಪೂರ್ಣ ಬ್ಯಾಕಪ್ ಡೌನ್‌ಲೋಡ್ ಮಾಡಿ">
+                    <i class="fa-solid fa-download me-1"></i> Backup (ಡೌನ್‌ಲೋಡ್)
+                </button>
+                <button type="button" class="btn btn-light btn-sm fw-bold text-primary shadow-sm" onclick="document.getElementById('globalBackupFilePicker').click()" title="ಹಿಂದೆ ಡೌನ್‌ಲೋಡ್ ಮಾಡಿದ JSON ಫೈಲ್ ಹಾಕಿ ರಿಸ್ಟೋರ್ ಮಾಡಿ">
+                    <i class="fa-solid fa-upload me-1"></i> Restore (ಫೈಲ್ ಹಾಕಿ)
+                </button>
+            `;
+            stHeaderGroup.appendChild(div);
+        }
+
+        // ಹಿಡನ್ ಫೈಲ್ ಪಿಕರ್
+        if (!document.getElementById('globalBackupFilePicker')) {
+            const inputPicker = document.createElement('input');
+            inputPicker.type = 'file';
+            inputPicker.id = 'globalBackupFilePicker';
+            inputPicker.accept = '.json';
+            inputPicker.className = 'd-none';
+            inputPicker.onchange = restoreSchoolDataFromBackup;
+            document.body.appendChild(inputPicker);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupUI);
+    } else {
+        setupUI();
+    }
+})();
         
     </script>
 </body>
