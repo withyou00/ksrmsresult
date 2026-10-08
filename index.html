@@ -24185,6 +24185,264 @@ if (typeof renderStudentTable === 'function') {
         }
     };
 }
+
+        // ======================================================================
+// COMPREHENSIVE ALL-FIELD BULK SPREADSHEET EDITOR (INCLUDES PEN, APAAR, PARENT AADHAAR)
+// ======================================================================
+
+function renderBulkEditTableRows() {
+    const currentClass = document.getElementById('regClassSelect')?.value || '6th Standard';
+    const classStudents = sampleStudents.filter(s => isSameClass(s.className, currentClass));
+    const tbody = document.getElementById('bulkEditTableBody');
+    const titleClass = document.getElementById('bulkEditClassDisplay');
+
+    if (titleClass) titleClass.innerText = currentClass;
+    if (!tbody) return;
+
+    if (classStudents.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="18" class="p-4 text-center text-muted">ಈ ತರಗತಿಯಲ್ಲಿ ಯಾವುದೇ ವಿದ್ಯಾರ್ಥಿಗಳಿಲ್ಲ.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = classStudents.map((s, idx) => `
+        <tr data-st-id="${s.id}" class="align-middle fs-8">
+            <td class="text-center fw-bold bg-light sticky-col-first">${idx + 1}</td>
+            
+            <!-- 1. Adm No -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center fw-bold b-adm" value="${s.admissionNo || ''}" style="width: 70px;">
+            </td>
+
+            <!-- 2. Student Name -->
+            <td>
+                <input type="text" class="form-control form-control-sm fw-bold text-primary b-name" value="${s.name || ''}" style="min-width: 170px;">
+            </td>
+
+            <!-- 3. Gender -->
+            <td>
+                <select class="form-select form-select-sm b-gender" style="width: 90px;">
+                    <option value="Boy" ${s.gender === 'Boy' ? 'selected' : ''}>ಗಂಡು / Boy</option>
+                    <option value="Girl" ${s.gender === 'Girl' ? 'selected' : ''}>ಹೆಣ್ಣು / Girl</option>
+                </select>
+            </td>
+
+            <!-- 4. DOB -->
+            <td>
+                <input type="date" class="form-control form-control-sm b-dob" value="${cleanDateFormat(s.dob)}" style="width: 130px;">
+            </td>
+
+            <!-- 5. Father Name -->
+            <td>
+                <input type="text" class="form-control form-control-sm b-father" value="${s.father || extractFatherFromFullName(s.name) || ''}" style="min-width: 130px;">
+            </td>
+
+            <!-- 6. Mother Name -->
+            <td>
+                <input type="text" class="form-control form-control-sm b-mother" value="${s.mother || ''}" placeholder="ತಾಯಿಯ ಹೆಸರು" style="min-width: 130px;">
+            </td>
+
+            <!-- 7. SATS ID -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center fw-bold text-primary b-sats" value="${s.sats || ''}" style="width: 110px;">
+            </td>
+
+            <!-- 8. PEN ID Number -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center fw-bold text-dark b-pen" value="${s.pen || ''}" placeholder="PEN No" style="width: 120px;">
+            </td>
+
+            <!-- 9. APAAR ID Number -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center fw-bold text-danger b-apaar" value="${s.apaarId || s.apaar || ''}" placeholder="APAAR ID" style="width: 125px;">
+            </td>
+
+            <!-- 10. Student Aadhaar -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center b-aadhaar" value="${s.stAadhaar || ''}" placeholder="12-Digit Aadhaar" style="width: 130px;">
+            </td>
+
+            <!-- 11. Father Aadhaar -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center b-father-aadhaar" value="${s.fatherAadhaar || ''}" placeholder="ತಂದೆ ಆಧಾರ್" style="width: 130px;">
+            </td>
+
+            <!-- 12. Mother Aadhaar -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center b-mother-aadhaar" value="${s.motherAadhaar || ''}" placeholder="ತಾಯಿ ಆಧಾರ್" style="width: 130px;">
+            </td>
+
+            <!-- 13. Category -->
+            <td>
+                <select class="form-select form-select-sm b-cat" style="width: 95px;">
+                    <option value="SC" ${s.casteCat === 'SC' ? 'selected' : ''}>SC</option>
+                    <option value="ST" ${s.casteCat === 'ST' ? 'selected' : ''}>ST</option>
+                    <option value="General" ${s.casteCat === 'General' || s.casteCat === 'GM' ? 'selected' : ''}>General</option>
+                    <option value="Cat-1" ${s.casteCat === 'Cat-1' ? 'selected' : ''}>Cat-1</option>
+                    <option value="2A" ${s.casteCat === '2A' ? 'selected' : ''}>2A</option>
+                    <option value="2B" ${s.casteCat === '2B' ? 'selected' : ''}>2B</option>
+                    <option value="3A" ${s.casteCat === '3A' ? 'selected' : ''}>3A</option>
+                    <option value="3B" ${s.casteCat === '3B' ? 'selected' : ''}>3B</option>
+                    <option value="Others" ${s.casteCat === 'Others' ? 'selected' : ''}>Others</option>
+                </select>
+            </td>
+
+            <!-- 14. Caste Name -->
+            <td>
+                <input type="text" class="form-control form-control-sm b-caste" value="${s.casteName || ''}" placeholder="ಜಾತಿ" style="width: 100px;">
+            </td>
+
+            <!-- 15. Religion -->
+            <td>
+                <input type="text" class="form-control form-control-sm b-religion" value="${s.religion || 'ಹಿಂದೂ'}" placeholder="ಧರ್ಮ" style="width: 95px;">
+            </td>
+
+            <!-- 16. CWSN Status -->
+            <td>
+                <select class="form-select form-select-sm b-cwsn" style="width: 120px;">
+                    <option value="No" ${!s.cwsnStatus || s.cwsnStatus === 'No' ? 'selected' : ''}>No</option>
+                    <option value="Yes-Exempt" ${s.cwsnStatus === 'Yes-Exempt' ? 'selected' : ''}>Yes - Exempt</option>
+                    <option value="Yes-Marks" ${s.cwsnStatus === 'Yes-Marks' ? 'selected' : ''}>Yes - Enter Marks</option>
+                </select>
+            </td>
+
+            <!-- 17. Mobile Number -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center b-mobile" value="${s.mobile || ''}" placeholder="Mobile" style="width: 110px;">
+            </td>
+        </tr>
+    `).join('');
+}
+
+// ಎಲ್ಲಾ 16 ಫೀಲ್ಡ್‌ಗಳನ್ನೂ ನಿಖರವಾಗಿ ಒಟ್ಟಿಗೆ ಸೇವ್ ಮಾಡುವ ಫಂಕ್ಷನ್
+function saveAllBulkStudentChanges() {
+    if (!checkLicensePermission("save bulk student changes")) return;
+
+    const rows = document.querySelectorAll('#bulkEditTableBody tr');
+    if (!rows || rows.length === 0) return;
+
+    let updatedCount = 0;
+
+    rows.forEach(tr => {
+        const stId = tr.getAttribute('data-st-id');
+        const st = sampleStudents.find(s => String(s.id) === String(stId));
+        if (st) {
+            st.admissionNo = tr.querySelector('.b-adm')?.value.trim() || '';
+            st.name = tr.querySelector('.b-name')?.value.trim() || st.name;
+            st.gender = tr.querySelector('.b-gender')?.value || 'Boy';
+            st.dob = cleanDateFormat(tr.querySelector('.b-dob')?.value);
+            st.father = tr.querySelector('.b-father')?.value.trim() || '';
+            st.mother = tr.querySelector('.b-mother')?.value.trim() || '';
+            st.sats = tr.querySelector('.b-sats')?.value.trim() || '';
+            
+            // ಹೊಸ ಫೀಲ್ಡ್‌ಗಳ ಸೇರ್ಪಡೆ
+            st.pen = tr.querySelector('.b-pen')?.value.trim() || '';
+            st.apaarId = tr.querySelector('.b-apaar')?.value.trim() || '';
+            st.stAadhaar = tr.querySelector('.b-aadhaar')?.value.trim() || '';
+            st.fatherAadhaar = tr.querySelector('.b-father-aadhaar')?.value.trim() || '';
+            st.motherAadhaar = tr.querySelector('.b-mother-aadhaar')?.value.trim() || '';
+            
+            st.casteCat = tr.querySelector('.b-cat')?.value || 'General';
+            st.casteName = tr.querySelector('.b-caste')?.value.trim() || '';
+            st.religion = tr.querySelector('.b-religion')?.value.trim() || 'ಹಿಂದೂ';
+            st.cwsnStatus = tr.querySelector('.b-cwsn')?.value || 'No';
+            st.mobile = tr.querySelector('.b-mobile')?.value.trim() || '';
+
+            updatedCount++;
+        }
+    });
+
+    sortStudentsAlphabetically(sampleStudents);
+    syncSchoolDataToCloud();
+    onClassChangeHandle();
+
+    const bulkModalEl = document.getElementById('bulkStudentEditModal');
+    if (bulkModalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(bulkModalEl) || new bootstrap.Modal(bulkModalEl);
+        modalInstance.hide();
+    }
+
+    alert(`ಯಶಸ್ವಿಯಾಗಿದೆ! ಒಟ್ಟು ${updatedCount} ವಿದ್ಯಾರ್ಥಿಗಳ ಸಂಪೂರ್ಣ ವಿವರಗಳನ್ನು (PEN, APAAR, ತಂದೆ/ತಾಯಿ ಆಧಾರ್ ಸೇರಿ ಎಲ್ಲವೂ) ಒಮ್ಮೆಲೆ ಅಪ್ಡೇಟ್ ಮಾಡಲಾಗಿದೆ.`);
+}
+
+// ಪರಿಷ್ಕೃತ ಬಲ್ಕ್ ಎಡಿಟ್ ಮೋಡಲ್ HTML (ಎಲ್ಲಾ ಕಾಲಂಗಳ ಸಮೇತ)
+function injectBulkStudentEditModalHTML() {
+    const oldModal = document.getElementById('bulkStudentEditModal');
+    if (oldModal) oldModal.remove();
+
+    const modalDiv = document.createElement('div');
+    modalDiv.className = 'modal fade';
+    modalDiv.id = 'bulkStudentEditModal';
+    modalDiv.tabIndex = -1;
+    modalDiv.setAttribute('aria-hidden', 'true');
+    modalDiv.innerHTML = `
+        <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
+            <div class="modal-content border-0">
+                <div class="modal-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
+                    <h5 class="modal-title fs-6 fw-bold">
+                        <i class="fa-solid fa-table-cells text-warning me-2"></i>
+                        <span>ವಿದ್ಯಾರ್ಥಿಗಳ ಸಂಪೂರ್ಣ ವಿವರಗಳ ಸಗಟು ತಿದ್ದುಪಡಿ / All-in-One Bulk Edit - </span>
+                        <span id="bulkEditClassDisplay" class="badge bg-warning text-dark fs-7">Class</span>
+                    </h5>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-success btn-sm fw-bold px-4 shadow-sm" onclick="saveAllBulkStudentChanges()">
+                            <i class="fa-solid fa-floppy-disk me-1"></i> Save All Changes (ಎಲ್ಲವನ್ನೂ ಒಮ್ಮೆಲೆ ಉಳಿಸಿ)
+                        </button>
+                        <button type="button" class="btn btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                </div>
+                <div class="modal-body p-2 bg-light">
+                    <div class="alert alert-info py-2 px-3 fs-8 mb-2 border border-info d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <i class="fa-solid fa-lightbulb text-warning me-1"></i>
+                            <strong>ಪೂರ್ಣ ಡೇಟಾ ಎಡಿಟರ್:</strong> PEN No, APAAR ID, ತಂದೆ ಮತ್ತು ತಾಯಿಯ ಆಧಾರ್ ಸಂಖ್ಯೆ, ತಾಯಿಯ ಹೆಸರು, ಜಾತಿ ಎಲ್ಲವನ್ನೂ ಅಡ್ಡಲಾಗಿ ಸ್ಕ್ರಾಲ್ ಮಾಡಿ ಒಟ್ಟಿಗೆ ಭರ್ತಿ ಮಾಡಬಹುದು. ಮುಗಿದ ನಂತರ <strong>'Save All Changes'</strong> ಕ್ಲಿಕ್ ಮಾಡಿ.
+                        </div>
+                        <button type="button" class="btn btn-success btn-sm fw-bold px-3" onclick="saveAllBulkStudentChanges()">
+                            <i class="fa-solid fa-check-double me-1"></i> ಉಳಿಸಿ / Save All
+                        </button>
+                    </div>
+
+                    <div class="table-responsive bg-white border rounded shadow-sm" style="max-height: 82vh; overflow-x: auto;">
+                        <table class="table table-bordered table-hover table-sm align-middle mb-0 text-center" style="font-size: 0.8rem; min-width: 2100px;">
+                            <thead class="table-dark sticky-top" style="z-index: 5;">
+                                <tr>
+                                    <th style="width: 35px;">#</th>
+                                    <th>ದಾ.ಸಂ (Adm No)</th>
+                                    <th style="min-width: 170px;">ವಿದ್ಯಾರ್ಥಿಯ ಹೆಸರು</th>
+                                    <th>ಲಿಂಗ (Gender)</th>
+                                    <th>ಜನನ ದಿನಾಂಕ (DOB)</th>
+                                    <th style="min-width: 130px;">ತಂದೆಯ ಹೆಸರು</th>
+                                    <th style="min-width: 130px;" class="bg-primary text-white">ತಾಯಿಯ ಹೆಸರು (Mother)</th>
+                                    <th>SATS ID</th>
+                                    <th class="bg-info text-dark">PEN ID Number</th>
+                                    <th class="bg-danger text-white">APAAR ID Number</th>
+                                    <th class="bg-primary text-white">ವಿದ್ಯಾರ್ಥಿ ಆಧಾರ್ (Aadhaar)</th>
+                                    <th class="bg-primary text-white">ತಂದೆಯ ಆಧಾರ್</th>
+                                    <th class="bg-primary text-white">ತಾಯಿಯ ಆಧಾರ್</th>
+                                    <th class="bg-primary text-white">ವರ್ಗ (Category)</th>
+                                    <th class="bg-primary text-white">ಜಾತಿ (Caste)</th>
+                                    <th>ಧರ್ಮ (Religion)</th>
+                                    <th>CWSN</th>
+                                    <th>ಮೊಬೈಲ್ ಸಂಖ್ಯೆ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bulkEditTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2 bg-white d-flex justify-content-between">
+                    <span class="text-muted fs-8">KSRMS V3.2 - Real-time Bulk Database Editor (All Fields Enabled)</span>
+                    <div>
+                        <button type="button" class="btn btn-secondary btn-sm fw-bold me-2" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-success btn-sm fw-bold px-4" onclick="saveAllBulkStudentChanges()">
+                            <i class="fa-solid fa-floppy-disk me-1"></i> Save All Changes / ಉಳಿಸಿ
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modalDiv);
+}
         
         
     </script>
