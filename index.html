@@ -23786,6 +23786,143 @@ renderIndividualReport = function() {
             </div>
         </div>`;
 };
+
+
+        // ======================================================================
+// KSRMS YOUTUBE TUTORIAL VIDEO INTEGRATION (DASHBOARD & TOP NAV)
+// ======================================================================
+
+// ನಿಮ್ಮ ಯೂಟ್ಯೂಬ್ ವಿಡಿಯೋ ಲಿಂಕ್ ಅಥವಾ ID ಯನ್ನು ಇಲ್ಲಿ ಕಾನ್ಫಿಗರ್ ಮಾಡಲಾಗಿದೆ
+const KSRMS_TUTORIAL_YOUTUBE_URL = "https://www.youtube.com/watch?v=your_video_id"; // ಅಗತ್ಯವಿದ್ದರೆ ನಿಮ್ಮ ನಿರ್ದಿಷ್ಟ ವಿಡಿಯೋ ಲಿಂಕ್ ಇಲ್ಲಿ ಬದಲಿಸಿ
+
+function openYouTubeTutorialModal() {
+    let ytModal = document.getElementById('ksrmsYouTubeTutorialModal');
+    if (!ytModal) {
+        injectYouTubeTutorialModalHTML();
+        ytModal = document.getElementById('ksrmsYouTubeTutorialModal');
+    }
+    const modalInst = new bootstrap.Modal(ytModal);
+    modalInst.show();
+}
+
+function injectYouTubeTutorialModalHTML() {
+    const oldModal = document.getElementById('ksrmsYouTubeTutorialModal');
+    if (oldModal) oldModal.remove();
+
+    const modalDiv = document.createElement('div');
+    modalDiv.className = 'modal fade';
+    modalDiv.id = 'ksrmsYouTubeTutorialModal';
+    modalDiv.tabIndex = -1;
+    modalDiv.setAttribute('aria-hidden', 'true');
+    modalDiv.innerHTML = `
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-danger shadow-lg">
+                <div class="modal-header bg-danger text-white fw-bold py-2">
+                    <h5 class="modal-title fs-6 d-flex align-items-center">
+                        <i class="fa-brands fa-youtube fa-lg me-2"></i> KSRMS V3.2 ಸಾಫ್ಟ್‌ವೇರ್ ಬಳಕೆ ಕುರಿತ ವಿಡಿಯೋ ಮಾರ್ಗದರ್ಶಿ (Tutorial Video)
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-3 bg-light text-center">
+                    <div class="alert alert-info py-2 fs-8 mb-3 text-start">
+                        <i class="fa-solid fa-circle-info me-2 text-primary"></i> 
+                        <strong>ಶಿಕ್ಷಕರ ಗಮನಕ್ಕೆ:</strong> KSRMS V3.2 ವೆಬ್‌ಸೈಟ್‌ನಲ್ಲಿ ವಿದ್ಯಾರ್ಥಿಗಳ ಡೇಟಾ ಇಂಪೋರ್ಟ್ ಮಾಡುವುದು, ಅಂಕಗಳ ನಮೂದು, CCE ಬ್ರಾಡ್‌ಶೀಟ್ ಹಾಗೂ ಪ್ರಗತಿ ಪತ್ರ ಮುದ್ರಿಸುವ ಪೂರ್ಣ ವಿಧಾನವನ್ನು ಈ ವಿಡಿಯೋದಲ್ಲಿ ವೀಕ್ಷಿಸಿ.
+                    </div>
+                    
+                    <!-- Video Embed / Watch Box -->
+                    <div class="border rounded p-4 bg-white shadow-sm mb-3">
+                        <i class="fa-brands fa-youtube fa-4x text-danger mb-2"></i>
+                        <h6 class="fw-bold text-dark mb-1">With You - Official YouTube Tutorial</h6>
+                        <p class="text-muted fs-8 mb-3">Real stories, True impact | KSRMS Result System Demo &amp; Training</p>
+                        
+                        <div class="d-flex justify-content-center gap-2 flex-wrap">
+                            <a href="${KSRMS_TUTORIAL_YOUTUBE_URL}" target="_blank" class="btn btn-danger btn-sm fw-bold px-4 py-2 shadow-sm">
+                                <i class="fa-solid fa-play me-1"></i> Watch Video on YouTube (ವಿಡಿಯೋ ವೀಕ್ಷಿಸಿ)
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-1 bg-white">
+                    <button type="button" class="btn btn-secondary btn-sm fw-bold" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modalDiv);
+}
+
+// ಡ್ಯಾಶ್‌ಬೋರ್ಡ್ ಬ್ಯಾನರ್‌ನಲ್ಲಿ ಹಾಗೂ ಟಾಪ್ ನ್ಯಾವಿಗೇಷನ್ ಬಾರ್‌ನಲ್ಲಿ ಬಟನ್ ಸೇರಿಸುವ ಆಟೋ-ಇಂಜೆಕ್ಟರ್
+(function injectTutorialButtonsUI() {
+    function addButtons() {
+        // 1. ಡ್ಯಾಶ್‌ಬೋರ್ಡ್‌ನ ಮೇಲ್ಭಾಗದಲ್ಲಿ ಆಕರ್ಷಕ ವಿಡಿಯೋ ಮಾರ್ಗದರ್ಶಿ ಬ್ಯಾನರ್ ಕಾರ್ಡ್
+        const dashContainer = document.querySelector('#dashboardSection');
+        const dashCardHeader = document.querySelector('#dashboardSection .card.border-start');
+        
+        if (dashContainer && !document.getElementById('dashVideoTutorialBanner')) {
+            const videoBanner = document.createElement('div');
+            videoBanner.id = 'dashVideoTutorialBanner';
+            videoBanner.className = 'alert alert-danger shadow-sm border-2 border-danger d-flex flex-wrap justify-content-between align-items-center p-3 mb-4 no-print';
+            videoBanner.innerHTML = `
+                <div class="d-flex align-items-center gap-3">
+                    <div class="bg-danger text-white rounded-circle p-2 px-3 d-flex align-items-center justify-content-center shadow-sm">
+                        <i class="fa-brands fa-youtube fa-2x"></i>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-1 text-danger">KSRMS V3.2 ಬಳಕೆ ಹೇಗೆ? ವಿಡಿಯೋ ಮಾರ್ಗದರ್ಶಿ ನೋಡಿ (Video Tutorial)</h6>
+                        <small class="text-dark">ವೆಬ್‌ಸೈಟ್ ಬಳಸಲು, ಅಂಕ ನಮೂದಿಸಲು ಅಥವಾ ಪ್ರಗತಿ ಪತ್ರ ಮುದ್ರಿಸಲು ಯಾವುದೇ ಗೊಂದಲವಿದ್ದರೆ ಸಂಪೂರ್ಣ ವಿವರಣಾತ್ಮಕ ಯೂಟ್ಯೂಬ್ ವಿಡಿಯೋ ನೋಡಿ ಸುಲಭವಾಗಿ ಕಲಿಯಿರಿ.</small>
+                    </div>
+                </div>
+                <div class="mt-2 mt-md-0">
+                    <button class="btn btn-danger fw-bold btn-sm shadow-sm px-3 py-2" onclick="openYouTubeTutorialModal()">
+                        <i class="fa-solid fa-circle-play me-1"></i> ವಿಡಿಯೋ ನೋಡಿ / Watch Tutorial
+                    </button>
+                </div>
+            `;
+            if (dashCardHeader) {
+                dashContainer.insertBefore(videoBanner, dashCardHeader);
+            } else {
+                dashContainer.insertBefore(videoBanner, dashContainer.firstChild);
+            }
+        }
+
+        // 2. ಟಾಪ್ ನ್ಯಾವಿಗೇಶನ್ ಬಾರ್‌ನಲ್ಲಿ (Help Desk ಪಕ್ಕದಲ್ಲಿ) ಯೂಟ್ಯೂಬ್ ಬಟನ್
+        const topNavGroup = document.querySelector('nav .ms-auto');
+        if (topNavGroup && !document.getElementById('navTutorialBtn')) {
+            const ytNavBtn = document.createElement('button');
+            ytNavBtn.id = 'navTutorialBtn';
+            ytNavBtn.className = 'btn btn-outline-light btn-sm fw-bold me-2 shadow-sm text-white no-print';
+            ytNavBtn.onclick = openYouTubeTutorialModal;
+            ytNavBtn.innerHTML = `<i class="fa-brands fa-youtube text-danger me-1"></i> Tutorial (ವಿಡಿಯೋ ಸಹಾಯ)`;
+            
+            const helpBtn = topNavGroup.querySelector('button[onclick*="openAiHelpModal"]');
+            if (helpBtn) {
+                topNavGroup.insertBefore(ytNavBtn, helpBtn);
+            } else {
+                topNavGroup.insertBefore(ytNavBtn, topNavGroup.firstChild);
+            }
+        }
+
+        // 3. ಮೊಬೈಲ್ ಮೆನುವಿನಲ್ಲಿಯೂ ಯೂಟ್ಯೂಬ್ ವಿಡಿಯೋ ಲಿಂಕ್ ಸೇರ್ಪಡೆ
+        const mobileNavUl = document.querySelector('#ksrmsNavbar .navbar-nav');
+        if (mobileNavUl && !document.getElementById('mobileTutorialNavItem')) {
+            const ytMobileLi = document.createElement('li');
+            ytMobileLi.id = 'mobileTutorialNavItem';
+            ytMobileLi.className = 'nav-item d-xl-none my-1 text-center';
+            ytMobileLi.innerHTML = `
+                <button class="btn btn-danger btn-sm fw-bold w-100 shadow-sm" onclick="openYouTubeTutorialModal()">
+                    <i class="fa-brands fa-youtube me-1"></i> KSRMS Tutorial Video (ವಿಡಿಯೋ ಸಹಾಯ)
+                </button>`;
+            mobileNavUl.appendChild(ytMobileLi);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', addButtons);
+    } else {
+        addButtons();
+    }
+})();
+        
         
     </script>
 </body>
