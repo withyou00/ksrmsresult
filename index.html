@@ -25109,6 +25109,322 @@ function generateVerifiedStudyCertificatePrint() {
 
     if (printContainer) printContainer.scrollIntoView({ behavior: 'smooth' });
 }
+
+        // ======================================================================
+// FLAWLESS NATURAL-FLOW DUAL CERTIFICATE (NO TEXT SPILL & CLEAN SINGLE DOTTED LINES)
+// ======================================================================
+
+function generateVerifiedStudyCertificatePrint() {
+    const getVal = id => document.getElementById(id)?.value.trim() || '';
+
+    const data = {
+        // ಕನ್ನಡ
+        prefixKn: getVal('certPrefixKn') || 'ಕುಮಾರಿ',
+        stNameKn: getVal('certStNameKn') || getVal('certStNameEn'),
+        fatherNameKn: getVal('certFatherNameKn') || getVal('certFatherNameEn') || '-',
+        motherNameKn: getVal('certMotherNameKn') || getVal('certMotherNameEn') || '-',
+        casteKn: getVal('certCasteKn') || 'ಸಾಮಾನ್ಯ',
+        pronounKn: getVal('certPronounKn') || 'ಇವಳು',
+        dobWordsKn: getVal('certDobWordsKn'),
+
+        // ಇಂಗ್ಲಿಷ್
+        prefixEn: getVal('certPrefixEn') || 'Kumari',
+        stNameEn: getVal('certStNameEn') || getVal('certStNameKn'),
+        fatherNameEn: getVal('certFatherNameEn') || getVal('certFatherNameKn') || '-',
+        motherNameEn: getVal('certMotherNameEn') || getVal('certMotherNameKn') || '-',
+        casteEn: getVal('certCasteEn') || 'General',
+        pronounEn: getVal('certPronounEn') || 'D/o',
+        dobWordsEn: getVal('certDobWordsEn'),
+
+        // ಸಾಮಾನ್ಯ ವಿವರಗಳು
+        className: getVal('certClassName'),
+        section: getVal('certSection') || 'Section A',
+        dobFig: getVal('certDobFigures'),
+        bookNo: getVal('certBookNo') || '01',
+        grNo: getVal('certGrNo') || '1',
+        aadhaarNo: getVal('certAadhaarNo') || '-',
+        satsNo: getVal('certSatsNo') || '-',
+        place: getVal('certPlace') || 'ಬೆಳಗಾವಿ ಗ್ರಾಮೀಣ',
+        date: getVal('certDate') || new Date().toLocaleDateString('en-GB')
+    };
+
+    const hmName = appSettings.hmName || 'ಮುಖ್ಯೋಪಾಧ್ಯಾಯರು';
+    const hmSig = appSettings.hmSigUrl || '';
+    const showSig = (appSettings.showDigitalSigs !== 'No');
+
+    document.getElementById('dynamicPageStyle').innerHTML = `@page { size: A4 portrait !important; margin: 4mm 5mm !important; }`;
+
+    const certHtml = `
+        <div class="dual-cert-page-container" id="studyBirthCertificatePaper" style="
+            width: 100%;
+            max-width: 195mm;
+            margin: 0 auto;
+            background: #ffffff;
+            box-sizing: border-box;
+            font-family: 'Anek Kannada', 'Poppins', sans-serif;
+            color: #000000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        ">
+            <!-- ============================================================== -->
+            <!-- 1. TOP BOX: KANNADA CERTIFICATE (ಸಂಪೂರ್ಣ ಕನ್ನಡ ಪ್ರಮಾಣ ಪತ್ರ)   -->
+            <!-- ============================================================== -->
+            <div style="
+                border: 2px solid #000000;
+                padding: 12px 18px;
+                box-sizing: border-box;
+                border-radius: 4px;
+                min-height: 128mm;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                background: #ffffff;
+            ">
+                <div>
+                    <!-- School Header -->
+                    <div style="text-align: center; border-bottom: 1px solid #ddd; padding-bottom: 2px; margin-bottom: 6px;">
+                        <span style="font-weight: 800; font-size: 0.98rem; color: #800020;">${appSettings.schoolName}</span>
+                        <small style="color: #444; font-size: 0.74rem; margin-left: 8px;">(DISE: ${appSettings.diseCode})</small>
+                    </div>
+
+                    <!-- Title & Photo Container -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                        <div style="width: 25mm;">&nbsp;</div>
+                        <div style="border: 2px solid #000000; padding: 3px 20px; text-align: center; border-radius: 4px; background: #fcfcfc;">
+                            <h5 style="margin: 0; font-weight: 800; font-size: 1.05rem; letter-spacing: 0.5px; color: #000;">
+                                ಜಾತಿ/ ಜನ್ಮ ದಾಖಲೆ/ ಶಾಲಾ ದಾಖಲಾತಿ/ ಪ್ರಮಾಣ ಪತ್ರ
+                            </h5>
+                        </div>
+                        <!-- Photo Box -->
+                        <div style="width: 25mm; height: 30mm; border: 1.5px dashed #444; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 0.58rem; color: #444; background: #fafafa; border-radius: 3px; line-height: 1.2;">
+                            <span>ಪಾಸ್‌ಪೋರ್ಟ್ ಅಳತೆಯ<br>ಭಾವಚಿತ್ರ</span>
+                        </div>
+                    </div>
+
+                    <!-- Flowing Paragraph Body: No Text Overflow & Crisp Dotted Lines -->
+                    <div style="font-size: 0.92rem; line-height: 2.25; text-align: justify; word-spacing: 1px; color: #000;">
+                        <strong>${data.prefixKn}&nbsp;/&nbsp;ರಿ :</strong>
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; color: #002b80; padding: 0 10px; display: inline-block; min-width: 140px; text-align: center;">
+                            ${data.stNameKn}
+                        </span>&nbsp;
+                        <strong>ತಂದೆಯ ಹೆಸರು :</strong>
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 10px; display: inline-block; min-width: 110px; text-align: center;">
+                            ${data.fatherNameKn}
+                        </span>&nbsp;
+                        <strong>ತಾಯಿಯ ಹೆಸರು :</strong>
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 10px; display: inline-block; min-width: 110px; text-align: center;">
+                            ${data.motherNameKn}
+                        </span>&nbsp;
+                        <strong>${data.pronounKn}</strong> ನಮ್ಮ ಶಾಲೆಯಲ್ಲಿ 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 8px; display: inline-block; min-width: 90px; text-align: center;">
+                            ${data.className}
+                        </span> 
+                        ರಲ್ಲಿ 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 8px; display: inline-block; min-width: 70px; text-align: center;">
+                            ${data.section}
+                        </span> 
+                        ವಿಭಾಗದಲ್ಲಿ ಓದಿದ್ದು/ ಓದುತ್ತಿದ್ದು ಇವನ/ಳ ಜಾತಿ : 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 10px; display: inline-block; min-width: 90px; text-align: center;">
+                            ${data.casteKn}
+                        </span>&nbsp; 
+                        <strong>ಜನ್ಮ ದಿನಾಂಕ :</strong> 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; color: #b30000; font-size: 0.95rem; padding: 0 8px; display: inline-block; min-width: 95px; text-align: center;">
+                            ${data.dobFig}
+                        </span> 
+                        ಇರುತ್ತದೆ. 
+                        <strong>(ಅಕ್ಷರದಲ್ಲಿ) :</strong> 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; color: #111; padding: 0 8px; display: inline-block; min-width: 250px; text-align: center;">
+                            ${data.dobWordsKn}
+                        </span> 
+                        ಇರುತ್ತದೆ. ಮೇಲೆ ತಿಳಿಸಲಾದ ದಾಖಲಾತಿಯು ನಮ್ಮ ಶಾಲಾ ಒಂದನೆಯ ನಂಬರ್ ರಜಿಸ್ಟರ್ ಬುಕ್ ನಂ. 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 6px; display: inline-block; min-width: 40px; text-align: center;">
+                            ${data.bookNo}
+                        </span> 
+                        ದಾ.ಸಂ. 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; color: #002b80; padding: 0 6px; display: inline-block; min-width: 50px; text-align: center;">
+                            ${data.grNo}
+                        </span> 
+                        ನೆಯದ್ದರ ಪ್ರಕಾರ ಇರುವುದೆಂದು ಪ್ರಮಾಣೀಕರಿಸಿದ ಈ ಪತ್ರ ನೀಡಲಾಗಿದೆ.
+                    </div>
+
+                    <!-- Aadhaar & SATS ID Fixed Box -->
+                    <div style="display: flex; justify-content: space-between; margin-top: 10px; gap: 15px;">
+                        <div style="flex: 1; border: 1.5px solid #000; padding: 3px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.84rem;">
+                            <span style="font-weight: bold;">ಆಧಾರ್ ನಂ :</span>
+                            <span style="font-weight: bold; letter-spacing: 1px;">${data.aadhaarNo}</span>
+                        </div>
+                        <div style="flex: 1; border: 1.5px solid #000; padding: 3px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.84rem;">
+                            <span style="font-weight: bold;">ಎಸ್.ಟಿ.ಎಸ್. ನಂ :</span>
+                            <span style="font-weight: bold; color: #002b80; letter-spacing: 1px;">${data.satsNo}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer Block -->
+                <div style="margin-top: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; font-size: 0.85rem; font-weight: bold;">
+                        <div style="line-height: 1.8; text-align: left;">
+                            <div>ಸ್ಥಳ : <span style="font-weight: bold;">${data.place}</span></div>
+                            <div>ದಿನಾಂಕ : <span style="font-weight: bold;">${data.date}</span></div>
+                        </div>
+                        <div style="text-align: center; display: flex; flex-direction: column; align-items: center;">
+                            <div class="seal-circle-placeholder" style="width: 48px !important; height: 48px !important; border: 1.5px dashed #555; font-size: 0.54rem !important; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center; color: #444;">
+                                ಶಾಲಾ ಮೊಹರು<br>School Seal
+                            </div>
+                        </div>
+                        <div style="text-align: center; min-width: 180px;">
+                            <div style="min-height: 30px;" class="d-flex align-items-end justify-content-center mb-1">
+                                ${showSig && hmSig ? `<img src="${hmSig}" style="max-height: 30px; max-width: 130px; object-fit: contain;">` : '<span style="color: transparent;">&nbsp;</span>'}
+                            </div>
+                            <div style="border-top: 1.5px solid #000; padding-top: 2px;">
+                                <div style="font-size: 0.85rem; font-weight: bold;">${hmName}</div>
+                                <div style="font-size: 0.85rem; font-weight: bold;">ಮುಖ್ಯೋಪಾಧ್ಯಾಯರು</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================== -->
+            <!-- 2. BOTTOM BOX: ENGLISH CERTIFICATE (ಸಂಪೂರ್ಣ ಇಂಗ್ಲಿಷ್ ಪ್ರಮಾಣ ಪತ್ರ)-->
+            <!-- ============================================================== -->
+            <div style="
+                border: 2px solid #000000;
+                padding: 12px 18px;
+                box-sizing: border-box;
+                border-radius: 4px;
+                min-height: 128mm;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                background: #ffffff;
+            ">
+                <div>
+                    <!-- School Header -->
+                    <div style="text-align: center; border-bottom: 1px solid #ddd; padding-bottom: 2px; margin-bottom: 6px;">
+                        <span style="font-weight: 800; font-size: 0.98rem; color: #800020;">${appSettings.schoolName}</span>
+                        <small style="color: #444; font-size: 0.74rem; margin-left: 8px;">(DISE: ${appSettings.diseCode})</small>
+                    </div>
+
+                    <!-- Title & Photo Container -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                        <div style="width: 25mm;">&nbsp;</div>
+                        <div style="border: 2px solid #000000; padding: 3px 20px; text-align: center; border-radius: 4px; background: #fcfcfc;">
+                            <h5 style="margin: 0; font-weight: 800; font-size: 1.05rem; letter-spacing: 0.5px; color: #000;">
+                                CASTE / BIRTH / SCHOOL STUDY CERTIFICATE
+                            </h5>
+                        </div>
+                        <!-- Photo Box -->
+                        <div style="width: 25mm; height: 30mm; border: 1.5px dashed #444; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 0.58rem; color: #444; background: #fafafa; border-radius: 3px; line-height: 1.2;">
+                            <span>Passport Size<br>Photo</span>
+                        </div>
+                    </div>
+
+                    <!-- Flowing Paragraph Body: No Text Overflow & Crisp Dotted Lines -->
+                    <div style="font-size: 0.92rem; line-height: 2.25; text-align: justify; word-spacing: 1px; color: #000;">
+                        <strong>${data.prefixEn} :</strong>
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; color: #002b80; padding: 0 10px; display: inline-block; min-width: 140px; text-align: center;">
+                            ${data.stNameEn}
+                        </span>&nbsp;
+                        <strong>${data.pronounEn} :</strong>
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 10px; display: inline-block; min-width: 110px; text-align: center;">
+                            ${data.fatherNameEn}
+                        </span>&nbsp;
+                        <strong>Mother Name :</strong>
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 10px; display: inline-block; min-width: 110px; text-align: center;">
+                            ${data.motherNameEn}
+                        </span>&nbsp;
+                        is / was a bonafide student of our school studying in 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 8px; display: inline-block; min-width: 90px; text-align: center;">
+                            ${data.className}
+                        </span> 
+                        Section 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 8px; display: inline-block; min-width: 50px; text-align: center;">
+                            ${data.section}
+                        </span>. 
+                        His / Her Caste is : 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 10px; display: inline-block; min-width: 90px; text-align: center;">
+                            ${data.casteEn}
+                        </span>&nbsp; 
+                        <strong>and Date of Birth is :</strong> 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; color: #b30000; font-size: 0.95rem; padding: 0 8px; display: inline-block; min-width: 95px; text-align: center;">
+                            ${data.dobFig}
+                        </span>. 
+                        <strong>(In Words) :</strong> 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; color: #111; padding: 0 8px; display: inline-block; min-width: 250px; text-align: center;">
+                            ${data.dobWordsEn}
+                        </span>. 
+                        This Certificate is issued as per the entries in our School General Admission Register Book No. 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; padding: 0 6px; display: inline-block; min-width: 40px; text-align: center;">
+                            ${data.bookNo}
+                        </span> 
+                        REG. No. : 
+                        <span style="border-bottom: 1.5px dotted #000; font-weight: bold; color: #002b80; padding: 0 6px; display: inline-block; min-width: 50px; text-align: center;">
+                            ${data.grNo}
+                        </span>.
+                    </div>
+
+                    <!-- Aadhaar & SATS ID Fixed Box -->
+                    <div style="display: flex; justify-content: space-between; margin-top: 10px; gap: 15px;">
+                        <div style="flex: 1; border: 1.5px solid #000; padding: 3px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.84rem;">
+                            <span style="font-weight: bold;">Aadhaar No :</span>
+                            <span style="font-weight: bold; letter-spacing: 1px;">${data.aadhaarNo}</span>
+                        </div>
+                        <div style="flex: 1; border: 1.5px solid #000; padding: 3px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.84rem;">
+                            <span style="font-weight: bold;">SATS ID No :</span>
+                            <span style="font-weight: bold; color: #002b80; letter-spacing: 1px;">${data.satsNo}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer Block -->
+                <div style="margin-top: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; font-size: 0.85rem; font-weight: bold;">
+                        <div style="line-height: 1.8; text-align: left;">
+                            <div>Place : <span style="font-weight: bold;">${data.place}</span></div>
+                            <div>Date : <span style="font-weight: bold;">${data.date}</span></div>
+                        </div>
+                        <div style="text-align: center; display: flex; flex-direction: column; align-items: center;">
+                            <div class="seal-circle-placeholder" style="width: 48px !important; height: 48px !important; border: 1.5px dashed #555; font-size: 0.54rem !important; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center; color: #444;">
+                                School Seal
+                            </div>
+                        </div>
+                        <div style="text-align: center; min-width: 180px;">
+                            <div style="min-height: 30px;" class="d-flex align-items-end justify-content-center mb-1">
+                                ${showSig && hmSig ? `<img src="${hmSig}" style="max-height: 30px; max-width: 130px; object-fit: contain;">` : '<span style="color: transparent;">&nbsp;</span>'}
+                            </div>
+                            <div style="border-top: 1.5px solid #000; padding-top: 2px;">
+                                <div style="font-size: 0.85rem; font-weight: bold;">${hmName}</div>
+                                <div style="font-size: 0.85rem; font-weight: bold;">HEADMASTER</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const printContainer = document.getElementById('printContainer');
+    if (printContainer) {
+        printContainer.innerHTML = certHtml;
+    }
+
+    const editModalEl = document.getElementById('studyCertEditModal');
+    if (editModalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(editModalEl) || new bootstrap.Modal(editModalEl);
+        modalInstance.hide();
+    }
+
+    document.querySelectorAll('.content-section').forEach(sec => sec.classList.add('d-none'));
+    document.getElementById('reportsSection').classList.remove('d-none');
+    
+    document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+    const rptNavBtn = document.querySelectorAll('.nav-tab-btn')[4];
+    if (rptNavBtn) rptNavBtn.classList.add('active');
+
+    if (printContainer) printContainer.scrollIntoView({ behavior: 'smooth' });
+}
         
         
     </script>
