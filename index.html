@@ -24443,6 +24443,299 @@ function injectBulkStudentEditModalHTML() {
     `;
     document.body.appendChild(modalDiv);
 }
+
+
+        // ======================================================================
+// BULK SPREADSHEET EDITOR WITH ALWAYS-VISIBLE HORIZONTAL SCROLLBAR & STICKY COLUMNS
+// ======================================================================
+
+(function injectBulkEditScrollStyles() {
+    const styleEl = document.createElement('style');
+    styleEl.id = 'bulkEditScrollbarFixStyle';
+    styleEl.innerHTML = `
+        /* ಕಣ್ಣಿಗೆ ಎದ್ದು ಕಾಣುವ ದಪ್ಪ ಹಾರಿಜಾಂಟಲ್ ಸ್ಕ್ರಾಲ್‌ಬಾರ್ */
+        #bulkEditScrollWrapper {
+            overflow-x: scroll !important;
+            overflow-y: auto !important;
+            max-height: 72vh !important;
+            border: 2px solid #2c3e50 !important;
+            background: #ffffff !important;
+        }
+
+        #bulkEditScrollWrapper::-webkit-scrollbar {
+            height: 18px !important; /* ದಪ್ಪ ಸ್ಕ್ರಾಲ್‌ಬಾರ್ */
+            width: 14px !important;
+        }
+
+        #bulkEditScrollWrapper::-webkit-scrollbar-track {
+            background: #e2e8f0 !important;
+            border-radius: 8px !important;
+            border: 1px solid #cbd5e0 !important;
+        }
+
+        #bulkEditScrollWrapper::-webkit-scrollbar-thumb {
+            background: #800020 !important; /* KSRMS ಪ್ರೈಮರಿ ಬಣ್ಣ */
+            border-radius: 8px !important;
+            border: 2px solid #ffffff !important;
+        }
+
+        #bulkEditScrollWrapper::-webkit-scrollbar-thumb:hover {
+            background: #b30000 !important;
+        }
+
+        /* ಎಡಬದಿಯ ಕಾಲಂಗಳು ಫ್ರೀಜ್ ಆಗುವಂತೆ (Sticky Freeze Columns like Excel) */
+        .sticky-col-sl {
+            position: sticky !important;
+            left: 0 !important;
+            z-index: 4 !important;
+            background-color: #f8f9fa !important;
+        }
+
+        .sticky-col-adm {
+            position: sticky !important;
+            left: 45px !important;
+            z-index: 4 !important;
+            background-color: #f8f9fa !important;
+        }
+
+        .sticky-col-name {
+            position: sticky !important;
+            left: 125px !important;
+            z-index: 4 !important;
+            background-color: #f8f9fa !important;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.15) !important;
+        }
+
+        /* ಹೆಡರ್ ಸ್ಟಿಕಿ ಹೊಂದಾಣಿಕೆ */
+        thead th.sticky-col-sl {
+            z-index: 6 !important;
+            background-color: #212529 !important;
+        }
+        thead th.sticky-col-adm {
+            z-index: 6 !important;
+            background-color: #212529 !important;
+        }
+        thead th.sticky-col-name {
+            z-index: 6 !important;
+            background-color: #212529 !important;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.2) !important;
+        }
+    `;
+    if (!document.getElementById('bulkEditScrollbarFixStyle')) {
+        document.head.appendChild(styleEl);
+    }
+})();
+
+function renderBulkEditTableRows() {
+    const currentClass = document.getElementById('regClassSelect')?.value || '6th Standard';
+    const classStudents = sampleStudents.filter(s => isSameClass(s.className, currentClass));
+    const tbody = document.getElementById('bulkEditTableBody');
+    const titleClass = document.getElementById('bulkEditClassDisplay');
+
+    if (titleClass) titleClass.innerText = currentClass;
+    if (!tbody) return;
+
+    if (classStudents.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="18" class="p-4 text-center text-muted">ಈ ತರಗತಿಯಲ್ಲಿ ಯಾವುದೇ ವಿದ್ಯಾರ್ಥಿಗಳಿಲ್ಲ.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = classStudents.map((s, idx) => `
+        <tr data-st-id="${s.id}" class="align-middle fs-8">
+            <!-- 1. SL No (Sticky) -->
+            <td class="text-center fw-bold sticky-col-sl" style="width: 45px;">${idx + 1}</td>
+            
+            <!-- 2. Adm No (Sticky) -->
+            <td class="sticky-col-adm" style="width: 80px;">
+                <input type="text" class="form-control form-control-sm text-center fw-bold b-adm" value="${s.admissionNo || ''}" style="width: 75px;">
+            </td>
+
+            <!-- 3. Student Name (Sticky) -->
+            <td class="sticky-col-name" style="width: 200px;">
+                <input type="text" class="form-control form-control-sm fw-bold text-primary b-name" value="${s.name || ''}" style="width: 195px;">
+            </td>
+
+            <!-- 4. Gender -->
+            <td>
+                <select class="form-select form-select-sm b-gender" style="width: 95px;">
+                    <option value="Boy" ${s.gender === 'Boy' ? 'selected' : ''}>ಗಂಡು / Boy</option>
+                    <option value="Girl" ${s.gender === 'Girl' ? 'selected' : ''}>ಹೆಣ್ಣು / Girl</option>
+                </select>
+            </td>
+
+            <!-- 5. DOB -->
+            <td>
+                <input type="date" class="form-control form-control-sm b-dob" value="${cleanDateFormat(s.dob)}" style="width: 130px;">
+            </td>
+
+            <!-- 6. Father Name -->
+            <td>
+                <input type="text" class="form-control form-control-sm b-father" value="${s.father || extractFatherFromFullName(s.name) || ''}" style="width: 140px;">
+            </td>
+
+            <!-- 7. Mother Name -->
+            <td>
+                <input type="text" class="form-control form-control-sm b-mother" value="${s.mother || ''}" placeholder="ತಾಯಿಯ ಹೆಸರು" style="width: 140px;">
+            </td>
+
+            <!-- 8. SATS ID -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center fw-bold text-primary b-sats" value="${s.sats || ''}" style="width: 110px;">
+            </td>
+
+            <!-- 9. PEN ID Number -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center fw-bold text-dark b-pen" value="${s.pen || ''}" placeholder="PEN No" style="width: 125px;">
+            </td>
+
+            <!-- 10. APAAR ID Number -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center fw-bold text-danger b-apaar" value="${s.apaarId || s.apaar || ''}" placeholder="APAAR ID" style="width: 125px;">
+            </td>
+
+            <!-- 11. Student Aadhaar -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center b-aadhaar" value="${s.stAadhaar || ''}" placeholder="12-Digit Aadhaar" style="width: 130px;">
+            </td>
+
+            <!-- 12. Father Aadhaar -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center b-father-aadhaar" value="${s.fatherAadhaar || ''}" placeholder="ತಂದೆ ಆಧಾರ್" style="width: 130px;">
+            </td>
+
+            <!-- 13. Mother Aadhaar -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center b-mother-aadhaar" value="${s.motherAadhaar || ''}" placeholder="ತಾಯಿ ಆಧಾರ್" style="width: 130px;">
+            </td>
+
+            <!-- 14. Category -->
+            <td>
+                <select class="form-select form-select-sm b-cat" style="width: 100px;">
+                    <option value="SC" ${s.casteCat === 'SC' ? 'selected' : ''}>SC</option>
+                    <option value="ST" ${s.casteCat === 'ST' ? 'selected' : ''}>ST</option>
+                    <option value="General" ${s.casteCat === 'General' || s.casteCat === 'GM' ? 'selected' : ''}>General</option>
+                    <option value="Cat-1" ${s.casteCat === 'Cat-1' ? 'selected' : ''}>Cat-1</option>
+                    <option value="2A" ${s.casteCat === '2A' ? 'selected' : ''}>2A</option>
+                    <option value="2B" ${s.casteCat === '2B' ? 'selected' : ''}>2B</option>
+                    <option value="3A" ${s.casteCat === '3A' ? 'selected' : ''}>3A</option>
+                    <option value="3B" ${s.casteCat === '3B' ? 'selected' : ''}>3B</option>
+                    <option value="Others" ${s.casteCat === 'Others' ? 'selected' : ''}>Others</option>
+                </select>
+            </td>
+
+            <!-- 15. Caste Name -->
+            <td>
+                <input type="text" class="form-control form-control-sm b-caste" value="${s.casteName || ''}" placeholder="ಜಾತಿ" style="width: 105px;">
+            </td>
+
+            <!-- 16. Religion -->
+            <td>
+                <input type="text" class="form-control form-control-sm b-religion" value="${s.religion || 'ಹಿಂದೂ'}" placeholder="ಧರ್ಮ" style="width: 95px;">
+            </td>
+
+            <!-- 17. CWSN Status -->
+            <td>
+                <select class="form-select form-select-sm b-cwsn" style="width: 120px;">
+                    <option value="No" ${!s.cwsnStatus || s.cwsnStatus === 'No' ? 'selected' : ''}>No</option>
+                    <option value="Yes-Exempt" ${s.cwsnStatus === 'Yes-Exempt' ? 'selected' : ''}>Yes - Exempt</option>
+                    <option value="Yes-Marks" ${s.cwsnStatus === 'Yes-Marks' ? 'selected' : ''}>Yes - Enter Marks</option>
+                </select>
+            </td>
+
+            <!-- 18. Mobile Number -->
+            <td>
+                <input type="text" class="form-control form-control-sm text-center b-mobile" value="${s.mobile || ''}" placeholder="Mobile" style="width: 110px;">
+            </td>
+        </tr>
+    `).join('');
+}
+
+// ಪರಿಷ್ಕೃತ ಬಲ್ಕ್ ಎಡಿಟ್ ಮೋಡಲ್ HTML (ಸ್ಪಷ್ಟ ಸ್ಕ್ರಾಲ್‌ಬಾರ್ ಸಮೇತ)
+function injectBulkStudentEditModalHTML() {
+    const oldModal = document.getElementById('bulkStudentEditModal');
+    if (oldModal) oldModal.remove();
+
+    const modalDiv = document.createElement('div');
+    modalDiv.className = 'modal fade';
+    modalDiv.id = 'bulkStudentEditModal';
+    modalDiv.tabIndex = -1;
+    modalDiv.setAttribute('aria-hidden', 'true');
+    modalDiv.innerHTML = `
+        <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
+            <div class="modal-content border-0">
+                <div class="modal-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
+                    <h5 class="modal-title fs-6 fw-bold">
+                        <i class="fa-solid fa-table-cells text-warning me-2"></i>
+                        <span>ವಿದ್ಯಾರ್ಥಿಗಳ ಸಂಪೂರ್ಣ ವಿವರಗಳ ಸಗಟು ತಿದ್ದುಪಡಿ / All-in-One Bulk Edit - </span>
+                        <span id="bulkEditClassDisplay" class="badge bg-warning text-dark fs-7">Class</span>
+                    </h5>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-success btn-sm fw-bold px-4 shadow-sm" onclick="saveAllBulkStudentChanges()">
+                            <i class="fa-solid fa-floppy-disk me-1"></i> Save All Changes (ಎಲ್ಲವನ್ನೂ ಒಮ್ಮೆಲೆ ಉಳಿಸಿ)
+                        </button>
+                        <button type="button" class="btn btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                </div>
+                <div class="modal-body p-2 bg-light d-flex flex-column" style="overflow: hidden;">
+                    <!-- Scroll Hint Alert Bar -->
+                    <div class="alert alert-warning py-2 px-3 fs-8 mb-2 border border-warning d-flex justify-content-between align-items-center flex-wrap gap-2 shadow-sm">
+                        <div>
+                            <i class="fa-solid fa-arrows-left-right text-dark me-1 fa-beat"></i>
+                            <strong>ಸೂಚನೆ:</strong> ಬಲಬದಿಯ ಕಾಲಂಗಳನ್ನು (PEN, APAAR, ಆಧಾರ್, ಜಾತಿ ಇತ್ಯಾದಿ) ನೋಡಲು <strong>ಕೆಳಗಿನ ಕೆಂಪು ಬಣ್ಣದ ಸ್ಕ್ರಾಲ್‌ಬಾರ್ ಬಳಸಿ ಬಲಕ್ಕೆ ಸರಸಿ</strong> ಅಥವಾ ಕೀಬೋರ್ಡ್‌ನಲ್ಲಿ <strong>Tab</strong> ಬಟನ್ ಒತ್ತಿ.
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-dark btn-sm fw-bold" onclick="document.getElementById('bulkEditScrollWrapper').scrollLeft += 350;">
+                                ಬಲಕ್ಕೆ ಸರಸಿ / Scroll Right <i class="fa-solid fa-chevron-right ms-1"></i>
+                            </button>
+                            <button type="button" class="btn btn-success btn-sm fw-bold px-3 shadow-sm" onclick="saveAllBulkStudentChanges()">
+                                <i class="fa-solid fa-check-double me-1"></i> ಉಳಿಸಿ / Save All
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- SCROLL WRAPPER CONTAINER -->
+                    <div id="bulkEditScrollWrapper" class="rounded shadow-sm flex-grow-1">
+                        <table class="table table-bordered table-hover table-sm align-middle mb-0 text-center" style="font-size: 0.8rem; min-width: 2200px;">
+                            <thead class="table-dark sticky-top" style="z-index: 5;">
+                                <tr>
+                                    <th class="sticky-col-sl" style="width: 45px;">#</th>
+                                    <th class="sticky-col-adm" style="width: 80px;">ದಾ.ಸಂ (Adm No)</th>
+                                    <th class="sticky-col-name" style="width: 200px;">ವಿದ್ಯಾರ್ಥಿಯ ಹೆಸರು</th>
+                                    <th>ಲಿಂಗ (Gender)</th>
+                                    <th>ಜನನ ದಿನಾಂಕ (DOB)</th>
+                                    <th>ತಂದೆಯ ಹೆಸರು</th>
+                                    <th class="bg-primary text-white">ತಾಯಿಯ ಹೆಸರು (Mother)</th>
+                                    <th>SATS ID</th>
+                                    <th class="bg-info text-dark">PEN ID Number</th>
+                                    <th class="bg-danger text-white">APAAR ID Number</th>
+                                    <th class="bg-primary text-white">ವಿದ್ಯಾರ್ಥಿ ಆಧಾರ್ (Aadhaar)</th>
+                                    <th class="bg-primary text-white">ತಂದೆಯ ಆಧಾರ್</th>
+                                    <th class="bg-primary text-white">ತಾಯಿಯ ಆಧಾರ್</th>
+                                    <th class="bg-primary text-white">ವರ್ಗ (Category)</th>
+                                    <th class="bg-primary text-white">ಜಾತಿ (Caste)</th>
+                                    <th>ಧರ್ಮ (Religion)</th>
+                                    <th>CWSN</th>
+                                    <th>ಮೊಬೈಲ್ ಸಂಖ್ಯೆ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bulkEditTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2 bg-white d-flex justify-content-between">
+                    <span class="text-muted fs-8">KSRMS V3.2 - Real-time Bulk Database Editor</span>
+                    <div>
+                        <button type="button" class="btn btn-secondary btn-sm fw-bold me-2" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-success btn-sm fw-bold px-4 shadow-sm" onclick="saveAllBulkStudentChanges()">
+                            <i class="fa-solid fa-floppy-disk me-1"></i> Save All Changes / ಉಳಿಸಿ
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modalDiv);
+}
         
         
     </script>
