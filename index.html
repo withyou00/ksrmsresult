@@ -25982,6 +25982,56 @@ function injectBulkStudentEditModalHTML() {
                 subscribeToSchoolCloudData(activeDise);
             }
         })();
+
+
+
+
+
+
+        <style>
+/* ಕಂಪ್ಯೂಟರ್‌ನಲ್ಲಿ 2ನೇ ಪೇಜ್ ಮಾರ್ಜಿನ್ ಕಟ್ ಆಗದಂತೆ ತಡೆಯುವ ಶಾಶ್ವತ ಫಿಕ್ಸ್ */
+@media print {
+    @page {
+        size: A4 portrait;
+        /* ಮೇಲ್ಭಾಗದಲ್ಲಿ ಕಡ್ಡಾಯವಾಗಿ 10mm ಜಾಗ ಬಿಡುತ್ತದೆ, ಇದರಿಂದ 2ನೇ ಪೇಜ್ ಕಟ್ ಆಗುವುದಿಲ್ಲ */
+        margin-top: 10mm !important;
+        margin-bottom: 8mm !important;
+        margin-left: 6mm !important;
+        margin-right: 6mm !important;
+    }
+
+    /* 2ನೇ ಪೇಜಿನಲ್ಲಿ ಟೇಬಲ್ ಹೆಡರ್ ಕಟ್ ಆಗದಂತೆ ಬ್ರೌಸರ್‌ಗೆ ಸ್ಪಷ್ಟ ಸೂಚನೆ */
+    thead {
+        display: table-header-group !important;
+    }
+
+    thead th {
+        /* ಹೆಡರ್ ಮೇಲಿನ ಬಾರ್ಡರ್ ಕ್ಲಿಪ್ ಆಗದಂತೆ ರಕ್ಷಣೆ */
+        box-decoration-break: clone !important;
+        -webkit-box-decoration-break: clone !important;
+        padding-top: 5px !important;
+        padding-bottom: 5px !important;
+    }
+
+    tr {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+
+    table {
+        page-break-inside: auto !important;
+        break-inside: auto !important;
+    }
+
+    /* ಎರಡನೇ ಪೇಜಿನ ಆರಂಭದಲ್ಲಿ ಟೇಬಲ್ ಅಂಟಿಕೊಳ್ಳುವುದನ್ನು ತಡೆಯಲು */
+    .single-subject-print-paper,
+    .print-preview-paper,
+    #printContainer {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
+}
+</style>
         
         
     </script>
