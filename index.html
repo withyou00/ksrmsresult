@@ -25678,6 +25678,310 @@ function injectBulkStudentEditModalHTML() {
     `;
     document.body.appendChild(modalDiv);
 }
+
+
+
+// ======================================================================
+        // 🔒 KSRMS ULTIMATE ZERO DATA LOSS & PERMANENT AUTO-SYNC ENGINE (V3.2)
+        // ======================================================================
+
+        // ೧. ಯಾವುದೇ ಕಾರಣಕ್ಕೂ Firestore Crash ಆಗದಂತೆ Undefined / NaN ತಡೆಯುವ ಫಂಕ್ಷನ್
+        function sanitizeObjectForFirestore(obj) {
+            if (obj === undefined) return "";
+            if (obj === null) return null;
+            if (typeof obj === 'number') {
+                return isNaN(obj) ? 0 : obj;
+            }
+            if (Array.isArray(obj)) {
+                return obj.map(item => sanitizeObjectForFirestore(item));
+            }
+            if (typeof obj === 'object') {
+                const cleaned = {};
+                for (const key of Object.keys(obj)) {
+                    cleaned[key] = sanitizeObjectForFirestore(obj[key]);
+                }
+                return cleaned;
+            }
+            return obj;
+        }
+
+        // ೨. ಪ್ರೈಮರಿ ಅಂಕಗಳ ಸ್ಮಾರ್ಟ್ ಮರ್ಜ್ (ಹಳೆಯ ಅಂಕಗಳನ್ನು ಹೊಸ ಬ್ಲಾಂಕ್ ಡೇಟಾ ಅಳಿಸದಂತೆ ರಕ್ಷಣೆ)
+        function mergeScholasticMarksSafe(oldMarks, newMarks) {
+            const result = {};
+            const allSubjects = new Set([...Object.keys(oldMarks || {}), ...Object.keys(newMarks || {})]);
+
+            allSubjects.forEach(sub => {
+                result[sub] = {};
+                const sOld = (oldMarks && oldMarks[sub]) ? oldMarks[sub] : {};
+                const sNew = (newMarks && newMarks[sub]) ? newMarks[sub] : {};
+                const allTests = new Set([...Object.keys(sOld), ...Object.keys(sNew)]);
+
+                allTests.forEach(testKey => {
+                    const vNew = sNew[testKey];
+                    const vOld = sOld[testKey];
+
+                    // ಹೊಸ ಮೌಲ್ಯ ಮಾನ್ಯವಾಗಿದ್ದರೆ ಅದನ್ನೇ ಇಡು; ಇಲ್ಲದಿದ್ದರೆ ಹಳೆಯ ಅಂಕವನ್ನು ಉಳಿಸಿಕೊ
+                    if (vNew !== undefined && vNew !== '' && vNew !== null && !isNaN(vNew)) {
+                        result[sub][testKey] = Number(vNew);
+                    } else if (vOld !== undefined && vOld !== '' && vOld !== null && !isNaN(vOld)) {
+                        result[sub][testKey] = Number(vOld);
+                    } else {
+                        result[sub][testKey] = '';
+                    }
+                });
+            });
+            return result;
+        }
+
+        // ೩. ಪ್ರೌಢಶಾಲಾ (9th & 10th) ಅಂಕಗಳ ಸ್ಮಾರ್ಟ್ ಮರ್ಜ್
+        function mergeHighSchoolMarksSafe(oldHs, newHs) {
+            const result = {};
+            const allSubjects = new Set([...Object.keys(oldHs || {}), ...Object.keys(newHs || {})]);
+
+            allSubjects.forEach(sub => {
+                result[sub] = createBlankHighSchoolSubjectMarks(sub);
+                const subOld = (oldHs && oldHs[sub]) ? oldHs[sub] : {};
+                const subNew = (newHs && newHs[sub]) ? newHs[sub] : {};
+
+                ['fa1', 'fa2', 'fa3', 'fa4'].forEach(faKey => {
+                    result[sub][faKey] = {
+                        act1: (subNew[faKey]?.act1 !== '' && subNew[faKey]?.act1 !== undefined) ? subNew[faKey].act1 : (subOld[faKey]?.act1 || ''),
+                        act2: (subNew[faKey]?.act2 !== '' && subNew[faKey]?.act2 !== undefined) ? subNew[faKey].act2 : (subOld[faKey]?.act2 || ''),
+                        written: (subNew[faKey]?.written !== '' && subNew[faKey]?.written !== undefined) ? subNew[faKey].written : (subOld[faKey]?.written || '')
+                    };
+                });
+
+                ['sa1', 'sa2'].forEach(saKey => {
+                    result[sub][saKey] = {
+                        preparatory100: (subNew[saKey]?.preparatory100 !== '' && subNew[saKey]?.preparatory100 !== undefined) ? subNew[saKey].preparatory100 : (subOld[saKey]?.preparatory100 || '')
+                    };
+                });
+            });
+            return result;
+        }
+
+        // ೪. ವಿದ್ಯಾರ್ಥಿಗಳ ಪೂರ್ಣ ಸ್ಮಾರ್ಟ್ ಡೀಪ್ ಮರ್ಜ್ (Smart Deep Merge Engine)
+        function smartMergeStudentLists(existingList, incomingList) {
+            if (!Array.isArray(incomingList) || incomingList.length === 0) return existingList;
+            if (!Array.isArray(existingList) || existingList.length === 0) return incomingList;
+
+            const merged = [];
+            const incomingMap = new Map();
+
+            incomingList.forEach(st => {
+                if (st && st.id) incomingMap.set(String(st.id), st);
+            });
+
+            existingList.forEach(baseSt => {
+                const id = String(baseSt.id);
+                if (incomingMap.has(id)) {
+                    const incSt = incomingMap.get(id);
+
+                    // ವಿದ್ಯಾರ್ಥಿಯ ಮೂಲ ವಿವರಗಳನ್ನು ಮರ್ಜ್ ಮಾಡಿ
+                    const finalSt = { ...baseSt, ...incSt };
+
+                    // ಅಂಕಗಳು ಯಾವುದೇ ಕಾರಣಕ್ಕೂ ಅಳಿಸದಂತೆ ಮರ್ಜ್ ಮಾಡಿ
+                    finalSt.marks = mergeScholasticMarksSafe(baseSt.marks, incSt.marks);
+                    finalSt.hsMarks = mergeHighSchoolMarksSafe(baseSt.hsMarks, incSt.hsMarks);
+
+                    // ಸಹಪಠ್ಯ ಶ್ರೇಣಿಗಳನ್ನು ಸಂರಕ್ಷಿಸಿ
+                    finalSt.co = {
+                        c1: incSt.co?.c1 || baseSt.co?.c1 || 'A',
+                        c2: incSt.co?.c2 || baseSt.co?.c2 || 'A',
+                        c3: incSt.co?.c3 || baseSt.co?.c3 || 'A',
+                        c4: incSt.co?.c4 || baseSt.co?.c4 || 'A',
+                        c5: incSt.co?.c5 || baseSt.co?.c5 || 'A',
+                        c6: incSt.co?.c6 || baseSt.co?.c6 || 'A',
+                        c7: incSt.co?.c7 || baseSt.co?.c7 || 'A',
+                        ict: (incSt.co?.ict !== undefined && incSt.co?.ict !== '') ? incSt.co.ict : (baseSt.co?.ict || 75),
+                        attDays: incSt.co?.attDays || baseSt.co?.attDays || 205,
+                        res: incSt.co?.res || baseSt.co?.res || 'ಉತ್ತೀರ್ಣ'
+                    };
+
+                    merged.push(finalSt);
+                    incomingMap.delete(id);
+                } else {
+                    merged.push(baseSt);
+                }
+            });
+
+            // ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಹೊಸದಾಗಿ ಬಂದ ಮಕ್ಕಳನ್ನು ಸೇರ್ಪಡೆ ಮಾಡಿ
+            incomingMap.forEach(newSt => merged.push(newSt));
+            return merged;
+        }
+
+        // ೫. ಶಾಶ್ವತ ಸೇವ್ ಎಂಜಿನ್ (ಖಾತರಿಯಾದ Local + Cloud Sync)
+        saveAndSyncAllData = async function() {
+            const activeDise = (currentSession && currentSession.diseCode) ? currentSession.diseCode : '29010411501';
+            if (!activeDise || activeDise === 'ALL') return;
+
+            if (!Array.isArray(sampleStudents) || sampleStudents.length === 0) {
+                console.warn("[KSRMS Guard] ಖಾಲಿ ಅರೇ ಸೇವ್ ಆಗುವುದನ್ನು ತಡೆಹಿಡಿಯಲಾಗಿದೆ.");
+                return;
+            }
+
+            // ಡೇಟಾವನ್ನು ಸಂಪೂರ್ಣವಾಗಿ ಸ್ಯಾನಿಟೈಸ್ ಮಾಡಿ
+            const sanitizedStudents = sanitizeObjectForFirestore(sampleStudents);
+            const sanitizedSettings = sanitizeObjectForFirestore(appSettings);
+            const sanitizedTeachers = sanitizeObjectForFirestore(classTeachersMap);
+            const sanitizedSubjects = sanitizeObjectForFirestore(subjectMasterList);
+
+            // ಹಂತ ೧: ಸಾಧನದ LocalStorage ನಲ್ಲಿ ತಕ್ಷಣವೇ ಸೇವ್ ಮಾಡಿ
+            try {
+                const bundle = {
+                    students: sanitizedStudents,
+                    appSettings: sanitizedSettings,
+                    classTeachersMap: sanitizedTeachers,
+                    subjectMasterList: sanitizedSubjects,
+                    savedAt: Date.now()
+                };
+                localStorage.setItem(`ksrms_permanent_store_${activeDise}`, JSON.stringify(bundle));
+                
+                // ತುರ್ತು ರೋಲ್‌ಬ್ಯಾಕ್ ಬ್ಯಾಕಪ್ (ಅಂಕಗಳು ಇರುವಾಗ ಮಾತ್ರ ಇತಿಹಾಸ ಸೇವ್ ಆಗುತ್ತದೆ)
+                const hasAnyMarks = sanitizedStudents.some(s => 
+                    (s.marks && Object.values(s.marks).some(sub => Object.values(sub).some(v => v !== ''))) ||
+                    (s.hsMarks && Object.values(s.hsMarks).some(sub => Object.values(sub).some(f => Object.values(f).some(v => v !== ''))))
+                );
+                if (hasAnyMarks) {
+                    localStorage.setItem(`ksrms_emergency_marks_backup_${activeDise}`, JSON.stringify(bundle));
+                }
+            } catch(e) {
+                console.warn("LocalStorage save warning:", e);
+            }
+
+            // ಹಂತ ೨: Firebase ಕ್ಲೌಡ್‌ಗೆ ಭದ್ರವಾಗಿ ಸೇವ್ ಮಾಡಿ (ಡೆಮೋ ಹಾಗೂ ನೈಜ ಶಾಲೆ ಎರಡಕ್ಕೂ ಲಭ್ಯ)
+            if (db) {
+                try {
+                    const docRef = db.collection("ksrms_schools").doc(activeDise);
+                    await docRef.set({
+                        students: sanitizedStudents,
+                        appSettings: sanitizedSettings,
+                        classTeachersMap: sanitizedTeachers,
+                        subjectMasterList: sanitizedSubjects,
+                        studentCount: sanitizedStudents.length,
+                        lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+
+                    console.log(`[KSRMS SafeSync] ${sanitizedStudents.length} ಮಕ್ಕಳ ಡೇಟಾ ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಪರ್ಮನೆಂಟ್ ಸೇವ್ ಆಗಿದೆ.`);
+                } catch(err) {
+                    console.error("Firebase Cloud Push Error:", err);
+                }
+            }
+        };
+
+        syncSchoolDataToCloud = function() {
+            saveAndSyncAllData();
+        };
+
+        // ೬. ರಿಯಲ್‌ಟೈಮ್ ಕ್ಲೌಡ್ ಡೇಟಾ ಸ್ವೀಕರಿಸುವಾಗ ಹಳೆಯ ಅಂಕ ನಾಶವಾಗದಂತೆ ರಕ್ಷಣೆ
+        subscribeToSchoolCloudData = function(diseCode) {
+            if (!diseCode || diseCode === 'ALL') return;
+
+            // ಮೊದಲು ಸ್ಥಳೀಯ ಸಾಧನದಿಂದ ತಕ್ಷಣ ಲೋಡ್ ಮಾಡಿ
+            loadSchoolDataFromStorage(diseCode);
+            onClassChangeHandle();
+
+            if (!db) return;
+            if (firestoreUnsubscribe) firestoreUnsubscribe();
+
+            const docRef = db.collection("ksrms_schools").doc(diseCode);
+            firestoreUnsubscribe = docRef.onSnapshot((doc) => {
+                if (doc.exists) {
+                    // ಶಿಕ್ಷಕರು ಅಂಕ ಟೈಪ್ ಮಾಡುತ್ತಿರುವಾಗ ಸ್ಕ್ರೀನ್ ರಿಫ್ರೆಶ್ ಆಗಿ ಅಡ್ಡಿಯಾಗುವುದನ್ನು ತಪ್ಪಿಸಿ
+                    if (document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.classList.contains('mark-input')) {
+                        return;
+                    }
+
+                    const cloudData = doc.data();
+
+                    if (cloudData.students && Array.isArray(cloudData.students) && cloudData.students.length > 0) {
+                        // ಸ್ಮಾರ್ಟ್ ಮರ್ಜ್: ಕ್ಲೌಡ್‌ನಿಂದ ಬಂದ ಡೇಟಾ ಮತ್ತು ಸ್ಥಳೀಯ ಅಂಕಗಳನ್ನು ಜೊತೆಯಾಗಿ ಜೋಡಿಸಿ
+                        sampleStudents = smartMergeStudentLists(sampleStudents, cloudData.students);
+
+                        if (cloudData.appSettings) appSettings = { ...appSettings, ...cloudData.appSettings };
+                        if (cloudData.classTeachersMap) classTeachersMap = { ...classTeachersMap, ...cloudData.classTeachersMap };
+                        if (cloudData.subjectMasterList) subjectMasterList = cloudData.subjectMasterList;
+
+                        // ಸ್ಥಳೀಯ ಮೆಮೊರಿಗೆ ಬ್ಯಾಕಪ್
+                        try {
+                            localStorage.setItem(`ksrms_permanent_store_${diseCode}`, JSON.stringify({
+                                students: sampleStudents,
+                                appSettings: appSettings,
+                                classTeachersMap: classTeachersMap,
+                                subjectMasterList: subjectMasterList,
+                                savedAt: Date.now()
+                            }));
+                        } catch(e) {}
+
+                        onClassChangeHandle();
+                        renderSubjectTable();
+                    }
+                }
+            }, (err) => console.error("Cloud Listener Error:", err));
+        };
+
+        // ೭. ಸಾಧನದ ಸ್ಥಳೀಯ ಸ್ಟೋರೇಜ್‌ನಿಂದ ಮರುಸ್ಥಾಪನೆ ಮತ್ತು ಆಟೋ-ರಿಕವರಿ
+        loadSchoolDataFromStorage = function(diseCode) {
+            if (!diseCode) return;
+            try {
+                let localStr = localStorage.getItem(`ksrms_permanent_store_${diseCode}`);
+                let parsed = localStr ? JSON.parse(localStr) : null;
+
+                // ಒಂದು ವೇಳೆ ಪ್ರಸ್ತುತ ಡೇಟಾದಲ್ಲಿ ಅಂಕಗಳು ಖಾಲಿಯಾಗಿದ್ದು, ತುರ್ತು ಬ್ಯಾಕಪ್ ಲಭ್ಯವಿದ್ದರೆ ಆಟೋ-ರಿಕವರ್ ಮಾಡಿ!
+                const emergencyStr = localStorage.getItem(`ksrms_emergency_marks_backup_${diseCode}`);
+                if (emergencyStr) {
+                    const emParsed = JSON.parse(emergencyStr);
+                    if (emParsed && Array.isArray(emParsed.students)) {
+                        if (!parsed || !Array.isArray(parsed.students) || parsed.students.length === 0) {
+                            parsed = emParsed;
+                        } else {
+                            parsed.students = smartMergeStudentLists(parsed.students, emParsed.students);
+                        }
+                    }
+                }
+
+                if (parsed && Array.isArray(parsed.students) && parsed.students.length > 0) {
+                    sampleStudents = smartMergeStudentLists(sampleStudents, parsed.students);
+                    if (parsed.appSettings) appSettings = { ...appSettings, ...parsed.appSettings };
+                    if (parsed.classTeachersMap) classTeachersMap = { ...classTeachersMap, ...parsed.classTeachersMap };
+                    if (parsed.subjectMasterList) subjectMasterList = parsed.subjectMasterList;
+                    console.log(`[KSRMS Storage] ${sampleStudents.length} ವಿದ್ಯಾರ್ಥಿಗಳ ವಿವರಗಳು ಭದ್ರವಾಗಿ ಲೋಡ್ ಆಗಿವೆ.`);
+                }
+            } catch(e) {
+                console.error("Storage Load Error:", e);
+            }
+        };
+
+        // ೮. ಅಂಕ ನಮೂದಿಸಿದ ತಕ್ಷಣ ಡೆಬೌನ್ಸ್ ಇಲ್ಲದೆ ಖಚಿತ ಆಟೋ-ಸೇವ್
+        const _origFastMarkInput = updateStudentMarkInlineFast;
+        updateStudentMarkInlineFast = function(inputEl, stId, sub, testKey) {
+            _origFastMarkInput(inputEl, stId, sub, testKey);
+            saveAndSyncAllData(); // ತಕ್ಷಣವೇ ಲೋಕಲ್ ಹಾಗೂ ಕ್ಲೌಡ್‌ಗೆ ಸೇವ್ ಆಗುತ್ತದೆ
+        };
+
+        const _origHSMarkInput = updateHighSchoolMarkInline;
+        updateHighSchoolMarkInline = function(inputEl, studentId) {
+            _origHSMarkInput(inputEl, studentId);
+            saveAndSyncAllData(); // ತಕ್ಷಣವೇ ಲೋಕಲ್ ಹಾಗೂ ಕ್ಲೌಡ್‌ಗೆ ಸೇವ್ ಆಗುತ್ತದೆ
+        };
+
+        // ೯. ಬ್ರೌಸರ್ ಕ್ಲೋಸ್ ಮಾಡಿದಾಗ, ಬ್ಯಾಕ್ ಒತ್ತಿದಾಗ ಅಥವಾ ಟ್ಯಾಬ್ ಮಿನಿಮೈಸ್ ಆದಾಗ ಆನ್-ದಿ-ಸ್ಪಾಟ್ ಸೇವ್
+        window.addEventListener('beforeunload', () => saveAndSyncAllData());
+        window.addEventListener('pagehide', () => saveAndSyncAllData());
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                saveAndSyncAllData();
+            }
+        });
+
+        // ೧೦. ಬೂಟ್ ಆದ ತಕ್ಷಣ ಆಟೋ-ಪ್ರೊಟೆಕ್ಟ್ ಸಕ್ರಿಯಗೊಳಿಸುವುದು
+        (function activatePermanentSaveShield() {
+            const activeDise = (currentSession && currentSession.diseCode) ? currentSession.diseCode : '29010411501';
+            loadSchoolDataFromStorage(activeDise);
+            if (currentSession && currentSession.role === 'school') {
+                subscribeToSchoolCloudData(activeDise);
+            }
+        })();
         
         
     </script>
