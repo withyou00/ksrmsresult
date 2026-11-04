@@ -26423,6 +26423,408 @@ function injectBulkStudentEditModalHTML() {
 
 
 
+
+
+        // ======================================================================
+        // 🔒 KSRMS BULLETPROOF DATA SHIELD V3.3 (FINAL PERMANENT ENGINE)
+        // ======================================================================
+
+        // ಸ್ಥಿತಿ ನಿಯಂತ್ರಕಗಳು
+        let ksrmsInitialCloudLoaded = false;
+        let ksrmsIsRestoringBackup = false;
+        let ksrmsDebounceTimer = null;
+        let ksrmsDeletedIds = new Set(JSON.parse(localStorage.getItem('ksrms_deleted_ids') || '[]'));
+
+        // ೧. ಫೈರ್‌ಬೇಸ್ ತಿರಸ್ಕರಿಸದಂತೆ undefined ಮೌಲ್ಯಗಳನ್ನು ಸ್ವಚ್ಛಗೊಳಿಸುವ ಫಂಕ್ಷನ್
+        function ksrmsSanitizeForCloud(data) {
+            if (data === undefined) return "";
+            if (data === null) return null;
+            if (typeof data === 'number') return isNaN(data) ? 0 : data;
+            if (Array.isArray(data)) return data.map(ksrmsSanitizeForCloud);
+            if (typeof data === 'object') {
+                const res = {};
+                for (const key of Object.keys(data)) {
+                    res[key] = ksrmsSanitizeForCloud(data[key]);
+                }
+                return res;
+            }
+            return data;
+        }
+
+        // ೨. ಸಕ್ರಿಯ ಶಾಲೆಯ DISE ಕೋಡ್ ಪಡೆಯುವುದು
+        function ksrmsGetSchoolDise() {
+            if (currentSession && currentSession.diseCode && currentSession.diseCode !== 'ALL') {
+                return String(currentSession.diseCode).trim();
+            }
+            return String(appSettings.diseCode || '29010411501').trim();
+        }
+
+        // ೩. ಸಾಧನದ LocalStorage ನಲ್ಲಿ ಅಂಕಗಳು ಮತ್ತು ಮಕ್ಕಳ ಡೇಟಾ ಲಾಕ್ ಮಾಡುವುದು
+        function ksrmsSaveToLocalStorage(dise) {
+            if (!dise) return;
+            try {
+                const bundle = {
+                    students: ksrmsSanitizeForCloud(sampleStudents),
+                    appSettings: ksrmsSanitizeForCloud(appSettings),
+                    classTeachersMap: ksrmsSanitizeForCloud(classTeachersMap),
+                    subjectMasterList: ksrmsSanitizeForCloud(subjectMasterList),
+                    updatedAt: Date.now()
+                };
+                localStorage.setItem(`ksrms_permanent_store_${dise}`, JSON.stringify(bundle));
+                localStorage.setItem(`ksrms_data_${dise}`, JSON.stringify(bundle));
+            } catch(e) {
+                console.warn("[KSRMS Storage] Cache note:", e);
+            }
+        }
+
+        // ೪. ಶಾಶ್ವತ ಸೇವ್ ಎಂಜಿನ್ (ಡೇಟಾ ಲೋಡ್ ಆಗುವ ಮುನ್ನ ಯಾವುದೇ ಓವರ್‌ರೈಟ್ ನಡೆಯುವುದಿಲ್ಲ)
+        saveAndSyncAllData = async function(isImmediate = false) {
+            const activeDise = ksrmsGetSchoolDise();
+            if (!activeDise) return;
+
+            // ಸುರಕ್ಷಾ ಕವಚ: ಕ್ಲೌಡ್ ಡೇಟಾ ಲೋಡ್ ಆಗುವ ಮುನ್ನ ಆಕಸ್ಮಿಕವಾಗಿ ಸೇವ್ ಆಗಿ ಹಳೆಯ ಡೇಟಾ ಅಳಿಸುವುದನ್ನು ತಡೆಯುವುದು
+            if (!ksrmsInitialCloudLoaded && (!sampleStudents || sampleStudents.length === 0)) {
+                console.warn("[KSRMS Guard] ಕ್ಲೌಡ್ ಲೋಡ್ ಆಗುವ ಮುನ್ನ ಸೇವ್ ಆಗುವುದನ್ನು ತಡೆಯಲಾಗಿದೆ.");
+                return;
+            }
+
+            // ಮೊದಲು ಕಂಪ್ಯೂಟರ್/ಮೊಬೈಲ್‌ನ ಮೆಮೊರಿಯಲ್ಲಿ ತಕ್ಷಣ ಸೇವ್ ಮಾಡಿ
+            ksrmsSaveToLocalStorage(activeDise);
+
+            const executeCloudSave = async () => {
+                if (!db || ksrmsIsRestoringBackup) return;
+                try {
+                    const cleanStudents = ksrmsSanitizeForCloud(sampleStudents);
+                    const cleanSettings = ksrmsSanitizeForCloud(appSettings);
+                    const cleanTeachers = ksrmsSanitizeForCloud(classTeachersMap);
+                    const cleanSubjects = ksrmsSanitizeForCloud(subjectMasterList);
+
+                    await db.collection("ksrms_schools").doc(activeDise).set({
+                        students: cleanStudents,
+                        appSettings: cleanSettings,
+                        classTeachersMap: cleanTeachers,
+                        subjectMasterList: cleanSubjects,
+                        studentCount: cleanStudents.length,
+                        lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+
+                    console.log(`[KSRMS Cloud] ✅ ${cleanStudents.length} ಮಕ್ಕಳ ವಿವರ ಮತ್ತು ಅಂಕಗಳು ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಸೇವ್ ಆಗಿವೆ.`);
+                } catch(err) {
+                    console.error("[KSRMS Cloud] Save error:", err);
+                }
+            };
+
+            if (isImmediate) {
+                clearTimeout(ksrmsDebounceTimer);
+                await executeCloudSave();
+            } else {
+                clearTimeout(ksrmsDebounceTimer);
+                ksrmsDebounceTimer = setTimeout(executeCloudSave, 700);
+            }
+        };
+
+        syncSchoolDataToCloud = function() {
+            saveAndSyncAllData(false);
+        };
+
+        // ೫. ಕ್ಲೌಡ್ ಲಿಸನರ್ (ಡಿಲೀಟ್ ಆದ ಮಕ್ಕಳನ್ನು ತರುವುದಿಲ್ಲ & ಅಂಕಗಳನ್ನು ಅಳಿಸುವುದಿಲ್ಲ)
+        subscribeToSchoolCloudData = function(diseCode) {
+            if (!diseCode || diseCode === 'ALL') return;
+
+            if (!db) return;
+            if (firestoreUnsubscribe) {
+                try { firestoreUnsubscribe(); } catch(e) {}
+            }
+
+            const docRef = db.collection("ksrms_schools").doc(diseCode);
+            firestoreUnsubscribe = docRef.onSnapshot((doc) => {
+                // ರಿಸ್ಟೋರ್ ಪ್ರಕ್ರಿಯೆಯಲ್ಲಿರುವಾಗ ಕ್ಲೌಡ್ ಹಳೆಯ ಡೇಟಾ ತರುವುದನ್ನು ತಡೆಯುವುದು
+                if (ksrmsIsRestoringBackup) return;
+
+                // ಇನ್‌ಪುಟ್ ಬಾಕ್ಸ್‌ನಲ್ಲಿ ಶಿಕ್ಷಕರು ಅಂಕ ಟೈಪ್ ಮಾಡುವಾಗ ಸ್ಕ್ರೀನ್ ರೀಸೆಟ್ ಆಗಬಾರದು
+                if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+
+                if (doc.exists) {
+                    const cloudData = doc.data();
+
+                    if (cloudData.students && Array.isArray(cloudData.students)) {
+                        // ಡಿಲೀಟ್ ಮಾಡಿದ ಮಕ್ಕಳ ಐಡಿಗಳನ್ನು ಫಿಲ್ಟರ್ ಮಾಡಿ ತೆಗೆಯುವುದು
+                        sampleStudents = cloudData.students.filter(s => !ksrmsDeletedIds.has(String(s.id)));
+
+                        if (cloudData.appSettings) appSettings = { ...appSettings, ...cloudData.appSettings };
+                        if (cloudData.classTeachersMap) classTeachersMap = { ...classTeachersMap, ...cloudData.classTeachersMap };
+                        if (cloudData.subjectMasterList) subjectMasterList = cloudData.subjectMasterList;
+
+                        ksrmsInitialCloudLoaded = true;
+                        ksrmsSaveToLocalStorage(diseCode);
+                        onClassChangeHandle();
+                        renderSubjectTable();
+                    }
+                } else {
+                    ksrmsInitialCloudLoaded = true;
+                }
+            }, (err) => console.error("[KSRMS Cloud] Listener error:", err));
+        };
+
+        // ೬. ಸಾಧನದ ಮೆಮೊರಿಯಿಂದ ಲೋಡ್ ಮಾಡುವ ಫಂಕ್ಷನ್
+        loadSchoolDataFromStorage = function(diseCode) {
+            if (!diseCode) return;
+            try {
+                const localStr = localStorage.getItem(`ksrms_permanent_store_${diseCode}`) || 
+                                 localStorage.getItem(`ksrms_data_${diseCode}`);
+                if (!localStr) return;
+
+                const parsed = JSON.parse(localStr);
+                if (parsed && Array.isArray(parsed.students) && parsed.students.length > 0) {
+                    sampleStudents = parsed.students.filter(s => !ksrmsDeletedIds.has(String(s.id)));
+                    if (parsed.appSettings) appSettings = { ...appSettings, ...parsed.appSettings };
+                    if (parsed.classTeachersMap) classTeachersMap = { ...classTeachersMap, ...parsed.classTeachersMap };
+                    if (parsed.subjectMasterList) subjectMasterList = parsed.subjectMasterList;
+                    ksrmsInitialCloudLoaded = true;
+                }
+            } catch(e) {
+                console.error("[KSRMS Storage] Load error:", e);
+            }
+        };
+
+        // ೭. ಮಗುವನ್ನು ಡಿಲೀಟ್ ಮಾಡುವ ಫಂಕ್ಷನ್ (ಮತ್ತೆ ಎಂದಿಗೂ ವಾಪಸ್ ಬರುವುದಿಲ್ಲ)
+        deleteStudent = async function(id) {
+            if (!checkLicensePermission("delete student records")) return;
+
+            const st = sampleStudents.find(s => String(s.id) === String(id));
+            const stName = st ? st.name : "ವಿದ್ಯಾರ್ಥಿ";
+
+            if (confirm(`ಖಚಿತವಾಗಿ "${stName}" ಅವರ ವಿವರಗಳನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸಬೇಕೇ?\n\nಈ ಮಗುವಿನ ಅಂಕಗಳು ಹಾಗೂ ಎಲ್ಲಾ ದಾಖಲೆಗಳು ಸಂಪೂರ್ಣ ಅಳಿಸಿಹೋಗುತ್ತವೆ.`)) {
+                // ಡಿಲೀಟ್ ಮಾಡಿದ ಐಡಿಯನ್ನು ಶಾಶ್ವತ ಬ್ಲಾಕ್‌ಲಿಸ್ಟ್‌ಗೆ ಸೇರಿಸಿ
+                ksrmsDeletedIds.add(String(id));
+                localStorage.setItem('ksrms_deleted_ids', JSON.stringify(Array.from(ksrmsDeletedIds)));
+
+                // ಪ್ರಸ್ತುತ ಪಟ್ಟಿಯಿಂದ ತೆಗೆದುಹಾಕಿ
+                sampleStudents = sampleStudents.filter(s => String(s.id) !== String(id));
+
+                // ಲೋಕಲ್ ಹಾಗೂ ಕ್ಲೌಡ್ ಎರಡರಲ್ಲೂ ತಕ್ಷಣವೇ ಸೇವ್ ಮಾಡಿ
+                await saveAndSyncAllData(true);
+                onClassChangeHandle();
+
+                alert(`"${stName}" ಅವರ ವಿವರಗಳನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸಲಾಗಿದೆ.`);
+            }
+        };
+
+        // ೮. ಬಲ್ಕ್ ಡಿಲೀಟ್ ಫಂಕ್ಷನ್ (Bulk Delete Fix)
+        deleteSelectedStudents = async function() {
+            if (!checkLicensePermission("delete student records")) return;
+
+            const checkedBoxes = document.querySelectorAll('.st-select-check:checked');
+            if (checkedBoxes.length === 0) {
+                return alert('ದಯವಿಟ್ಟು ಅಳಿಸಬೇಕಾದ ಮಕ್ಕಳನ್ನು ಚೆಕ್‌ಬಾಕ್ಸ್ ಮೂಲಕ ಆಯ್ಕೆ ಮಾಡಿ!');
+            }
+
+            const selectedIds = Array.from(checkedBoxes).map(cb => String(cb.value));
+
+            if (confirm(`ಖಚಿತವಾಗಿ ಆಯ್ಕೆಮಾಡಿದ ${selectedIds.length} ಮಕ್ಕಳ ವಿವರಗಳನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸಬೇಕೇ?`)) {
+                selectedIds.forEach(id => ksrmsDeletedIds.add(String(id)));
+                localStorage.setItem('ksrms_deleted_ids', JSON.stringify(Array.from(ksrmsDeletedIds)));
+
+                sampleStudents = sampleStudents.filter(s => !selectedIds.includes(String(s.id)));
+
+                const masterCheck = document.getElementById('selectAllCheck');
+                if (masterCheck) masterCheck.checked = false;
+
+                await saveAndSyncAllData(true);
+                onClassChangeHandle();
+
+                alert(`ಆಯ್ಕೆಮಾಡಿದ ${selectedIds.length} ಮಕ್ಕಳ ವಿವರಗಳನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸಲಾಗಿದೆ.`);
+            }
+        };
+
+        // ೯. RESTORE FIX: ರಿಸ್ಟೋರ್ ಆದ ಡೇಟಾ ಶಾಶ್ವತವಾಗಿ ಉಳಿಯುತ್ತದೆ (ಮಾಯವಾಗುವುದಿಲ್ಲ)
+        restoreSchoolDataFromBackup = async function(event) {
+            if (!checkLicensePermission("restore school data backup")) return;
+
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    const studentsList = importedData.studentsDataWithMarks || importedData.students;
+
+                    if (!studentsList || !Array.isArray(studentsList)) {
+                        return alert("⚠️ ಅಮಾನ್ಯ ಬ್ಯಾಕಪ್ ಫೈಲ್! ಇದರಲ್ಲಿ ಮಕ್ಕಳ ವಿವರಗಳು ದೊರೆಯಲಿಲ್ಲ.");
+                    }
+
+                    const confirmMsg = `ಖಚಿತವಾಗಿ ಈ ಬ್ಯಾಕಪ್ ಡೇಟಾವನ್ನು ಮರುಸ್ಥಾಪಿಸಬೇಕೇ (Restore)?\n\n` +
+                                       `🏫 ಶಾಲೆ: ${importedData.schoolInfo?.schoolName || importedData.schoolName || '-'}\n` +
+                                       `👥 ಒಟ್ಟು ಮಕ್ಕಳು: ${studentsList.length}\n\n` +
+                                       `ಈ ಡೇಟಾ ಲೋಕಲ್ ಹಾಗೂ ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಶಾಶ್ವತವಾಗಿ ಸೇವ್ ಆಗುತ್ತದೆ.`;
+
+                    if (confirm(confirmMsg)) {
+                        ksrmsIsRestoringBackup = true;
+
+                        // ಬ್ಲಾಕ್‌ಲಿಸ್ಟ್ ಕ್ಲಿಯರ್ ಮಾಡಿ
+                        ksrmsDeletedIds.clear();
+                        localStorage.removeItem('ksrms_deleted_ids');
+
+                        sampleStudents = studentsList;
+                        if (importedData.appSettings) appSettings = { ...appSettings, ...importedData.appSettings };
+                        if (importedData.classTeachersMap) classTeachersMap = importedData.classTeachersMap;
+                        if (importedData.subjectMasterList) subjectMasterList = importedData.subjectMasterList;
+
+                        const activeDise = ksrmsGetSchoolDise();
+                        ksrmsSaveToLocalStorage(activeDise);
+
+                        // ಕ್ಲೌಡ್‌ಗೆ ಪೂರ್ಣವಾಗಿ ಹೊಸ ಡೇಟಾ ಸೇವ್ ಮಾಡಿ
+                        if (db) {
+                            const cleanStudents = ksrmsSanitizeForCloud(sampleStudents);
+                            const cleanSettings = ksrmsSanitizeForCloud(appSettings);
+                            const cleanTeachers = ksrmsSanitizeForCloud(classTeachersMap);
+                            const cleanSubjects = ksrmsSanitizeForCloud(subjectMasterList);
+
+                            await db.collection("ksrms_schools").doc(activeDise).set({
+                                students: cleanStudents,
+                                appSettings: cleanSettings,
+                                classTeachersMap: cleanTeachers,
+                                subjectMasterList: cleanSubjects,
+                                studentCount: cleanStudents.length,
+                                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                            }, { merge: true });
+                        }
+
+                        ksrmsInitialCloudLoaded = true;
+                        ksrmsIsRestoringBackup = false;
+
+                        onClassChangeHandle();
+                        renderSubjectTable();
+
+                        alert(`🎉 ಅಭಿನಂದನೆಗಳು! ಎಲ್ಲಾ ${sampleStudents.length} ಮಕ್ಕಳ ಹೆಸರು ಹಾಗೂ ಅಂಕಗಳು ಯಶಸ್ವಿಯಾಗಿ ರಿಸ್ಟೋರ್ ಆಗಿವೆ.`);
+                    }
+                } catch(err) {
+                    ksrmsIsRestoringBackup = false;
+                    console.error("[KSRMS Restore] Error:", err);
+                    alert("ಬ್ಯಾಕಪ್ ಫೈಲ್ ಓದಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಸರಿಯಾದ .json ಫೈಲ್ ಆಯ್ಕೆ ಮಾಡಿ.");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        };
+
+        // ೧೦. ಪ್ರೈಮರಿ ಅಂಕಗಳು ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಕಳೆದುಹೋಗದಂತೆ ರಕ್ಷಣೆ
+        updateStudentMarkInlineFast = function(inputEl, stId, sub, testKey) {
+            if (!checkLicensePermission("enter marks")) {
+                inputEl.value = '';
+                return;
+            }
+
+            const st = sampleStudents.find(s => String(s.id) === String(stId));
+            if (!st) return;
+
+            if (!st.marks) st.marks = {};
+            if (!st.marks[sub]) st.marks[sub] = {};
+
+            const val = inputEl.value.trim();
+            st.marks[sub][testKey] = (val !== '' && !isNaN(val)) ? Number(val) : '';
+
+            const calc = calculateSubjectScores(st.marks[sub], st.cwsnStatus === 'Yes-Exempt', st.className);
+            const row = inputEl.closest('tr');
+
+            if (row) {
+                const cFa1 = row.querySelector('.col-cfa1'); if (cFa1) cFa1.innerText = calc.cFA1;
+                const gFa1 = row.querySelector('.col-gfa1'); if (gFa1) gFa1.innerText = calc.gFA1;
+                const cFa2 = row.querySelector('.col-cfa2'); if (cFa2) cFa2.innerText = calc.cFA2;
+                const gFa2 = row.querySelector('.col-gfa2'); if (gFa2) gFa2.innerText = calc.gFA2;
+                const cSa1 = row.querySelector('.col-csa1'); if (cSa1) cSa1.innerText = calc.cSA1;
+                const gSa1 = row.querySelector('.col-gsa1'); if (gSa1) gSa1.innerText = calc.gSA1;
+                const t1Tot = row.querySelector('.col-t1tot'); if (t1Tot) t1Tot.innerText = calc.t1Tot;
+
+                const cFa3 = row.querySelector('.col-cfa3'); if (cFa3) cFa3.innerText = calc.cFA3;
+                const gFa3 = row.querySelector('.col-gfa3'); if (gFa3) gFa3.innerText = calc.gFA3;
+                const cFa4 = row.querySelector('.col-cfa4'); if (cFa4) cFa4.innerText = calc.cFA4;
+                const gFa4 = row.querySelector('.col-gfa4'); if (gFa4) gFa4.innerText = calc.gFA4;
+                const cSa2 = row.querySelector('.col-csa2'); if (cSa2) cSa2.innerText = calc.cSA2;
+                const gSa2 = row.querySelector('.col-gsa2'); if (gSa2) gSa2.innerText = calc.gSA2;
+                const t2Tot = row.querySelector('.col-t2tot'); if (t2Tot) t2Tot.innerText = calc.t2Tot;
+
+                const grandTot = row.querySelector('.col-grandtot'); 
+                if (grandTot) grandTot.innerText = calc.hasMarks ? `${calc.subjectGrandTot} (${calc.gGrand})` : '-';
+            }
+
+            saveAndSyncAllData(false);
+        };
+
+        // ೧೧. ಹೈಸ್ಕೂಲ್ ಅಂಕಗಳು ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಕಳೆದುಹೋಗದಂತೆ ರಕ್ಷಣೆ
+        updateHighSchoolMarkInline = function(inputEl, studentId) {
+            if (!checkLicensePermission("enter high school marks")) {
+                inputEl.value = '';
+                return;
+            }
+
+            const st = sampleStudents.find(s => String(s.id) === String(studentId));
+            if (!st) return;
+
+            const subKey = inputEl.getAttribute('data-sub');
+            const testKey = inputEl.getAttribute('data-test');
+            const fieldKey = inputEl.getAttribute('data-field');
+
+            if (!st.hsMarks) st.hsMarks = {};
+            if (!st.hsMarks[subKey]) st.hsMarks[subKey] = createBlankHighSchoolSubjectMarks(subKey);
+
+            let val = inputEl.value.trim();
+            const maxVal = parseFloat(inputEl.getAttribute('max')) || 100;
+            if (val !== "" && parseFloat(val) > maxVal) {
+                val = maxVal;
+                inputEl.value = maxVal;
+            }
+
+            st.hsMarks[subKey][testKey][fieldKey] = (val !== "" && !isNaN(val)) ? parseFloat(val) : "";
+
+            const calc = calculateSubjectFinalMarks(subKey, st.hsMarks[subKey], st.className);
+            const row = inputEl.closest('tr');
+            if (row) {
+                const elFa1Tot = row.querySelector('.col-fa1-tot'); if (elFa1Tot) elFa1Tot.innerText = calc.fa1Tot;
+                const elFa1G = row.querySelector('.col-fa1-grade'); if (elFa1G) elFa1G.innerText = calc.fa1Grade;
+                const elFa2Tot = row.querySelector('.col-fa2-tot'); if (elFa2Tot) elFa2Tot.innerText = calc.fa2Tot;
+                const elFa2G = row.querySelector('.col-fa2-grade'); if (elFa2G) elFa2G.innerText = calc.fa2Grade;
+                const elSa1Conv = row.querySelector('.col-sa1-conv'); if (elSa1Conv) elSa1Conv.innerText = calc.fa1fa2Conv;
+                const elSa1Tot = row.querySelector('.col-sa1-tot'); if (elSa1Tot) elSa1Tot.innerText = calc.sa1Total;
+                const elSa1G = row.querySelector('.col-sa1-grade'); if (elSa1G) elSa1G.innerText = calc.sa1Grade;
+                const elFa3Tot = row.querySelector('.col-fa3-tot'); if (elFa3Tot) elFa3Tot.innerText = calc.fa3Tot;
+                const elFa3G = row.querySelector('.col-fa3-grade'); if (elFa3G) elFa3G.innerText = calc.fa3Grade;
+                const elFa4Tot = row.querySelector('.col-fa4-tot'); if (elFa4Tot) elFa4Tot.innerText = calc.fa4Tot;
+                const elFa4G = row.querySelector('.col-fa4-grade'); if (elFa4G) elFa4G.innerText = calc.fa4Grade;
+                const elFa200Tot = row.querySelector('.col-fa200-tot'); if (elFa200Tot) elFa200Tot.innerText = calc.fa200Sum;
+                const elFa20Conv = row.querySelector('.col-fa20-conv'); if (elFa20Conv) elFa20Conv.innerText = calc.fa20Conv;
+                const elGrandTot = row.querySelector('.col-grand-tot'); if (elGrandTot) elGrandTot.innerText = calc.grandTotal;
+
+                const gradeEl = row.querySelector('.col-grade');
+                if (gradeEl) {
+                    gradeEl.innerText = calc.grandGrade;
+                    gradeEl.className = `badge ${calc.pass ? 'bg-success' : 'bg-danger'} col-grade`;
+                }
+
+                const statusEl = row.querySelector('.col-status');
+                if (statusEl) {
+                    statusEl.innerText = calc.pass ? 'Pass' : 'Fail';
+                    statusEl.className = `fw-bold ${calc.pass ? 'text-success' : 'text-danger'} col-status`;
+                }
+            }
+
+            saveAndSyncAllData(false);
+        };
+
+        // ೧೨. ಪೇಜ್ ಲೋಡ್ ಆದಾಗ ಸರಿಯಾದ ಶಾಲೆಯ ಡೇಟಾವನ್ನು ಸಂಪರ್ಕಿಸುವುದು
+        (function initSafeBoot() {
+            setTimeout(() => {
+                const dise = ksrmsGetSchoolDise();
+                loadSchoolDataFromStorage(dise);
+                if (currentSession && currentSession.role === 'school') {
+                    subscribeToSchoolCloudData(dise);
+                } else {
+                    ksrmsInitialCloudLoaded = true;
+                }
+                onClassChangeHandle();
+            }, 300);
+        })();
         
         
     </script>
