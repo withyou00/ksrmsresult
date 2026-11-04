@@ -26829,7 +26829,558 @@ function injectBulkStudentEditModalHTML() {
 
 
 
-       
+       // ======================================================================
+        // 🔒 KSRMS FINAL BULLETPROOF ENGINE V3.5 (ZERO DATA LOSS & MULTI-SCHOOL)
+        // ======================================================================
+
+        let ksrmsIsRestoring = false;
+        let ksrmsSyncTimer = null;
+
+        // ೧. ಫೈರ್‌ಬೇಸ್ ತಿರಸ್ಕರಿಸದಂತೆ JSON ಮೂಲಕ undefined ಸಂಪೂರ್ಣ ತೆಗೆಯುವ ಫಂಕ್ಷನ್
+        function ksrmsCleanData(obj) {
+            try {
+                return JSON.parse(JSON.stringify(obj, (k, v) => (v === undefined ? "" : v)));
+            } catch(e) {
+                return obj || [];
+            }
+        }
+
+        // ೨. ಶಾಲೆಯ ಸರಿಯಾದ DISE ಕೋಡ್ ಪಡೆಯುವುದು
+        function ksrmsGetActiveDise() {
+            if (currentSession && currentSession.role === 'school' && currentSession.diseCode) {
+                return String(currentSession.diseCode).trim();
+            }
+            const cfgDise = document.getElementById('cfgDiseCode')?.value?.trim();
+            return String(cfgDise || appSettings.diseCode || '29010411501').trim();
+        }
+
+        // ೩. ಆಯಾ ಶಾಲೆಯ ಪ್ರತ್ಯೇಕ LocalStorage ಕೀಲಿಯಲ್ಲಿ ಡೇಟಾ ಸುರಕ್ಷಿತವಾಗಿಡುವುದು
+        function ksrmsSaveToSchoolStorage(dise) {
+            if (!dise) return;
+            try {
+                if (Array.isArray(sampleStudents) && sampleStudents.length > 0) {
+                    const bundle = {
+                        students: ksrmsCleanData(sampleStudents),
+                        appSettings: ksrmsCleanData(appSettings),
+                        classTeachersMap: ksrmsCleanData(classTeachersMap),
+                        subjectMasterList: ksrmsCleanData(subjectMasterList),
+                        savedAt: Date.now()
+                    };
+                    localStorage.setItem(`ksrms_school_data_${dise}`, JSON.stringify(bundle));
+                    localStorage.setItem(`ksrms_permanent_store_${dise}`, JSON.stringify(bundle));
+                }
+            } catch(e) {
+                console.warn("[KSRMS Storage] Write error:", e);
+            }
+        }
+
+        // ೪. ಸಾಧನದಿಂದ ಆಯಾ ಶಾಲೆಯ ಡೇಟಾವನ್ನು ಮಾತ್ರ ಲೋಡ್ ಮಾಡುವುದು
+        loadSchoolDataFromStorage = function(dise) {
+            if (!dise) return false;
+            try {
+                const localStr = localStorage.getItem(`ksrms_school_data_${dise}`) || 
+                                 localStorage.getItem(`ksrms_permanent_store_${dise}`) ||
+                                 localStorage.getItem(`ksrms_data_${dise}`);
+                if (!localStr) return false;
+
+                const parsed = JSON.parse(localStr);
+                if (parsed && Array.isArray(parsed.students) && parsed.students.length > 0) {
+                    sampleStudents = parsed.students;
+                    if (parsed.appSettings) appSettings = { ...appSettings, ...parsed.appSettings };
+                    if (parsed.classTeachersMap) classTeachersMap = { ...classTeachersMap, ...parsed.classTeachersMap };
+                    if (parsed.subjectMasterList) subjectMasterList = parsed.subjectMasterList;
+                    return true;
+                }
+            } catch(e) {
+                console.error("[KSRMS Storage] Read error:", e);
+            }
+            return false;
+        };
+
+        // ೫. ಡೇಟಾ ಉಳಿಸುವ ಮತ್ತು ಕ್ಲೌಡ್ ಸಿಂಕ್ ಮಾಡುವ ಎಂಜಿನ್ (Never Clears to 0)
+        saveAndSyncAllData = async function(isImmediate = false) {
+            const activeDise = ksrmsGetActiveDise();
+            if (!activeDise || activeDise === 'ALL') return;
+
+            // ಸುರಕ್ಷತೆ: ಮೆಮೊರಿ ಖಾಲಿಯಾಗಿದ್ದರೆ ಅಸ್ತಿತ್ವದಲ್ಲಿರುವ ಕ್ಲೌಡ್ ಡೇಟಾವನ್ನು ಖಾಲಿ ಮಾಡಬೇಡ
+            if (!sampleStudents || sampleStudents.length === 0) return;
+
+            // ಸಾಧನದಲ್ಲಿ ತಕ್ಷಣವೇ ಶಾಶ್ವತವಾಗಿ ಸೇವ್ ಮಾಡಿ
+            ksrmsSaveToSchoolStorage(activeDise);
+
+            const pushToCloud = async () => {
+                if (!db || ksrmsIsRestoring || currentSession.role !== 'school') return;
+                try {
+                    const cleanStudents = ksrmsCleanData(sampleStudents);
+                    const cleanSettings = ksrmsCleanData(appSettings);
+                    const cleanTeachers = ksrmsCleanData(classTeachersMap);
+                    const cleanSubjects = ksrmsCleanData(subjectMasterList);
+
+                    await db.collection("ksrms_schools").doc(activeDise).set({
+                        students: cleanStudents,
+                        appSettings: cleanSettings,
+                        classTeachersMap: cleanTeachers,
+                        subjectMasterList: cleanSubjects,
+                        studentCount: cleanStudents.length,
+                        lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+
+                    console.log(`[KSRMS Cloud] ✅ ${cleanStudents.length} ಮಕ್ಕಳ ಡೇಟಾ ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಸುರಕ್ಷಿತವಾಗಿದೆ.`);
+                } catch(err) {
+                    console.error("[KSRMS Cloud] Save Error:", err);
+                }
+            };
+
+            if (isImmediate) {
+                clearTimeout(ksrmsSyncTimer);
+                await pushToCloud();
+            } else {
+                clearTimeout(ksrmsSyncTimer);
+                ksrmsSyncTimer = setTimeout(pushToCloud, 700);
+            }
+        };
+
+        syncSchoolDataToCloud = function() {
+            saveAndSyncAllData(false);
+        };
+
+        // ೬. ಕ್ಲೌಡ್ ಲಿಸನರ್ (ಡೇಟಾ 0 ಆಗದಂತೆ ಕಟ್ಟುನಿಟ್ಟಿನ ರಕ್ಷಣೆ)
+        subscribeToSchoolCloudData = function(diseCode) {
+            if (!diseCode || diseCode === 'ALL') return;
+
+            if (firestoreUnsubscribe) {
+                try { firestoreUnsubscribe(); } catch(e) {}
+                firestoreUnsubscribe = null;
+            }
+
+            // ಮೊದಲು ಸಾಧನದಲ್ಲಿ ಈ ಹಿಂದೆ ಸೇವ್ ಆಗಿರುವ ಈ ಶಾಲೆಯ ಡೇಟಾವನ್ನು ತಕ್ಷಣ ಲೋಡ್ ಮಾಡಿ
+            const loadedFromLocal = loadSchoolDataFromStorage(diseCode);
+            onClassChangeHandle();
+
+            if (!db) return;
+
+            const docRef = db.collection("ksrms_schools").doc(diseCode);
+            firestoreUnsubscribe = docRef.onSnapshot((doc) => {
+                if (ksrmsIsRestoring) return;
+                if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+
+                if (doc.exists) {
+                    const cloudData = doc.data();
+
+                    // ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಮಕ್ಕಳು ಇದ್ದರೆ ಮಾತ್ರ ಲೋಡ್ ಮಾಡಿ
+                    if (cloudData.students && Array.isArray(cloudData.students) && cloudData.students.length > 0) {
+                        sampleStudents = cloudData.students;
+                        if (cloudData.appSettings) appSettings = { ...appSettings, ...cloudData.appSettings };
+                        if (cloudData.classTeachersMap) classTeachersMap = { ...classTeachersMap, ...cloudData.classTeachersMap };
+                        if (cloudData.subjectMasterList) subjectMasterList = cloudData.subjectMasterList;
+
+                        ksrmsSaveToSchoolStorage(diseCode);
+                        onClassChangeHandle();
+                        renderSubjectTable();
+                    } else if (loadedFromLocal && sampleStudents.length > 0) {
+                        // ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಇನ್ನೂ ಖಾಲಿಯಿದ್ದು, ಲೋಕಲ್‌ನಲ್ಲಿ ಡೇಟಾ ಇದ್ದರೆ ಲೋಕಲ್ ಡೇಟಾವನ್ನು ಕ್ಲೌಡ್‌ಗೆ ಕಳುಹಿಸಿ!
+                        saveAndSyncAllData(true);
+                    }
+                } else if (loadedFromLocal && sampleStudents.length > 0) {
+                    // ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಡಾಕ್ಯುಮೆಂಟ್ ಇಲ್ಲದಿದ್ದರೆ ಲೋಕಲ್ ಡೇಟಾವನ್ನು ಕ್ಲೌಡ್‌ಗೆ ಸಿಂಕ್ ಮಾಡಿ
+                    saveAndSyncAllData(true);
+                }
+            }, (err) => console.error("[KSRMS Cloud] Subscription Error:", err));
+        };
+
+        // ೭. ಶಾಲಾ LOGIN ಓವರ್‌ರೈಡರ್ (ಬೇರೆ ಶಾಲೆಯ ಮಕ್ಕಳು ಮಿಕ್ಸ್ ಆಗುವುದಿಲ್ಲ & ಈ ಶಾಲೆಯ ಡೇಟಾ ಲೋಡ್ ಆಗುತ್ತದೆ)
+        performSchoolLogin = async function() {
+            const dise = document.getElementById('loginDiseCode').value.trim();
+            const rawKey = document.getElementById('loginSecretKey').value.trim();
+
+            if (!dise || !rawKey) return alert('ದಯವಿಟ್ಟು ಶಾಲೆಯ DISE Code ಮತ್ತು Secret Key ಎರಡನ್ನೂ ನಮೂದಿಸಿ!');
+
+            let foundRecord = null;
+
+            if (db) {
+                try {
+                    const docSnap = await db.collection("ksrms_licenses").doc(dise).get();
+                    if (docSnap.exists) foundRecord = docSnap.data();
+                } catch(err) {}
+            }
+
+            if (!foundRecord) {
+                const dbKeys = JSON.parse(localStorage.getItem('ksrms_keys_db') || '[]');
+                foundRecord = dbKeys.find(k => String(k.diseCode).trim() === dise);
+            }
+
+            if (!foundRecord) {
+                return alert(`DISE Code (${dise}) ಗೆ ಯಾವುದೇ ನೋಂದಾಯಿತ Secret Key ದೊರೆತಿಲ್ಲ. ದಯವಿಟ್ಟು ಪರಿಶೀಲಿಸಿ.`);
+            }
+
+            const inputKeyNorm = normalizeKeyStr(rawKey);
+            const storedKeyNorm = normalizeKeyStr(foundRecord.secretKey);
+
+            if (inputKeyNorm !== storedKeyNorm && !storedKeyNorm.endsWith(inputKeyNorm)) {
+                return alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ!');
+            }
+
+            const expiresAt = foundRecord.expiresAt ? (typeof foundRecord.expiresAt === 'number' ? foundRecord.expiresAt : (foundRecord.expiresAt.toMillis ? foundRecord.expiresAt.toMillis() : Date.now() + 365*24*60*60*1000)) : Date.now() + 365*24*60*60*1000;
+
+            if (Date.now() > expiresAt) {
+                return alert('ಈ ಶಾಲೆಯ Secret Key ಅವಧಿ ಮುಗಿದಿದೆ (Expired)!');
+            }
+
+            // ಹಿಂದಿನ ಲಿಸನರ್ ಕ್ಲಿಯರ್ ಮಾಡಿ
+            if (firestoreUnsubscribe) {
+                try { firestoreUnsubscribe(); } catch(e) {}
+                firestoreUnsubscribe = null;
+            }
+
+            // ಹೊಸ ಶಾಲೆಯ ಸೆಷನ್ ಆಕ್ಟಿವೇಟ್ ಮಾಡಿ
+            currentSession = {
+                isLoggedIn: true,
+                role: 'school',
+                diseCode: foundRecord.diseCode,
+                schoolName: foundRecord.schoolName,
+                mobile: foundRecord.mobile
+            };
+            try {
+                localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession));
+            } catch(e) {}
+
+            appSettings.diseCode = foundRecord.diseCode;
+            appSettings.schoolName = foundRecord.schoolName;
+            if (document.getElementById('cfgDiseCode')) document.getElementById('cfgDiseCode').value = foundRecord.diseCode;
+            if (document.getElementById('cfgSchoolName')) document.getElementById('cfgSchoolName').value = foundRecord.schoolName;
+
+            loginModalInstance.hide();
+            updateSessionUI();
+
+            // ಈ ಶಾಲೆಯ ಡೇಟಾವನ್ನು ಮಾತ್ರ ಲೋಡ್ ಮಾಡಿ ಸಂಪರ್ಕಿಸಿ
+            const loaded = loadSchoolDataFromStorage(foundRecord.diseCode);
+            if (!loaded) {
+                sampleStudents = []; // ಈ ಶಾಲೆಗೆ ಈ ಮೊದಲು ಯಾವುದೇ ಡೇಟಾ ಇಲ್ಲದಿದ್ದರೆ ಮಾತ್ರ ಖಾಲಿ ಪಟ್ಟಿ
+            }
+            onClassChangeHandle();
+
+            subscribeToSchoolCloudData(foundRecord.diseCode);
+            alert(`ಲಾಗಿನ್ ಯಶಸ್ವಿಯಾಗಿದೆ!\n\nಶಾಲೆ: ${foundRecord.schoolName}\nDISE: ${foundRecord.diseCode}`);
+        };
+
+        // ೮. ಸುರಕ್ಷಿತ LOGOUT ಫಂಕ್ಷನ್ (ಹಾಲಿ ಶಾಲೆಯ ಡೇಟಾ ಸೇವ್ ಮಾಡಿ ನಂತರವಷ್ಟೇ ನಿರ್ಗಮಿಸುತ್ತದೆ)
+        function performSchoolLogout() {
+            if (confirm("ಖಚಿತವಾಗಿ KSRMS ಲಾಗಿನ್‌ನಿಂದ ನಿರ್ಗಮಿಸಬೇಕೇ (Logout)?")) {
+                const currentDise = ksrmsGetActiveDise();
+
+                // ನಿರ್ಗಮಿಸುವ ಮುನ್ನ ಪ್ರಸ್ತುತ ಶಾಲೆಯ ಡೇಟಾವನ್ನು ಸಂಪೂರ್ಣವಾಗಿ ಸೇವ್ ಮಾಡಿ
+                if (currentDise && sampleStudents.length > 0) {
+                    ksrmsSaveToSchoolStorage(currentDise);
+                }
+
+                if (firestoreUnsubscribe) {
+                    try { firestoreUnsubscribe(); } catch(e) {}
+                    firestoreUnsubscribe = null;
+                }
+
+                // ಸೆಷನ್ ಕ್ಲಿಯರ್ ಮಾಡಿ
+                currentSession = {
+                    isLoggedIn: false,
+                    role: 'demo',
+                    diseCode: '29010411501',
+                    schoolName: 'ಸರ್ಕಾರಿ ಕನ್ನಡ ಹಿರಿಯ ಪ್ರಾಥಮಿಕ ಶಾಲೆ ತುಮ್ಮರಗುದ್ದಿ',
+                    mobile: '9902090911'
+                };
+                localStorage.removeItem('ksrms_active_session');
+                sessionStorage.removeItem('ksrms_active_session');
+
+                // ಸ್ಕ್ರೀನ್ ಮೇಲೆ ಡೆಮೋ ಮಕ್ಕಳನ್ನು ಮಾತ್ರ ತಂದುಕೊಡಿ
+                sampleStudents = [];
+                appSettings.schoolName = "ಸರ್ಕಾರಿ ಕನ್ನಡ ಹಿರಿಯ ಪ್ರಾಥಮಿಕ ಶಾಲೆ ತುಮ್ಮರಗುದ್ದಿ";
+                appSettings.diseCode = "29010411501";
+                if (document.getElementById('cfgDiseCode')) document.getElementById('cfgDiseCode').value = "29010411501";
+                if (document.getElementById('cfgSchoolName')) document.getElementById('cfgSchoolName').value = appSettings.schoolName;
+
+                updateSessionUI();
+                onClassChangeHandle();
+                renderSubjectTable();
+
+                alert("ಯಶಸ್ವಿಯಾಗಿ ಲಾಗ್‌ಔಟ್ ಆಗಿದ್ದೀರಿ! ನಿಮ್ಮ ಶಾಲೆಯ ಡೇಟಾ ಸುರಕ್ಷಿತವಾಗಿದೆ.");
+            }
+        }
+
+        // ೯. ವಿದ್ಯಾರ್ಥಿ ಅಳಿಸುವ ಫಂಕ್ಷನ್ (ಮತ್ತೆ ಎಂದಿಗೂ ಬರುವುದಿಲ್ಲ)
+        deleteStudent = async function(id) {
+            if (!checkLicensePermission("delete student records")) return;
+
+            const st = sampleStudents.find(s => String(s.id) === String(id));
+            const stName = st ? st.name : "ವಿದ್ಯಾರ್ಥಿ";
+
+            if (confirm(`ಖಚಿತವಾಗಿ "${stName}" ಅವರ ವಿವರಗಳನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸಬೇಕೇ?`)) {
+                sampleStudents = sampleStudents.filter(s => String(s.id) !== String(id));
+                const activeDise = ksrmsGetActiveDise();
+                ksrmsSaveToSchoolStorage(activeDise);
+                await saveAndSyncAllData(true);
+                onClassChangeHandle();
+                alert(`"${stName}" ಅವರ ವಿವರಗಳನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸಲಾಗಿದೆ.`);
+            }
+        };
+
+        // ೧೦. ಬಲ್ಕ್ ಡಿಲೀಟ್ ಫಂಕ್ಷನ್
+        deleteSelectedStudents = async function() {
+            if (!checkLicensePermission("delete student records")) return;
+
+            const checkedBoxes = document.querySelectorAll('.st-select-check:checked');
+            if (checkedBoxes.length === 0) {
+                return alert('ದಯವಿಟ್ಟು ಅಳಿಸಬೇಕಾದ ಮಕ್ಕಳನ್ನು ಚೆಕ್‌ಬಾಕ್ಸ್ ಮೂಲಕ ಆಯ್ಕೆ ಮಾಡಿ!');
+            }
+
+            const selectedIds = Array.from(checkedBoxes).map(cb => String(cb.value));
+
+            if (confirm(`ಖಚಿತವಾಗಿ ಆಯ್ಕೆಮಾಡಿದ ${selectedIds.length} ಮಕ್ಕಳ ವಿವರಗಳನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸಬೇಕೇ?`)) {
+                sampleStudents = sampleStudents.filter(s => !selectedIds.includes(String(s.id)));
+                const masterCheck = document.getElementById('selectAllCheck');
+                if (masterCheck) masterCheck.checked = false;
+
+                const activeDise = ksrmsGetActiveDise();
+                ksrmsSaveToSchoolStorage(activeDise);
+                await saveAndSyncAllData(true);
+                onClassChangeHandle();
+                alert(`ಆಯ್ಕೆಮಾಡಿದ ${selectedIds.length} ಮಕ್ಕಳ ವಿವರಗಳನ್ನು ಶಾಶ್ವತವಾಗಿ ಅಳಿಸಲಾಗಿದೆ.`);
+            }
+        };
+
+        // ೧೧. RESTORE FIX: ರಿಸ್ಟೋರ್ ಆದ ಡೇಟಾ ಎಂದಿಗೂ ಮಾಯವಾಗುವುದಿಲ್ಲ
+        restoreSchoolDataFromBackup = async function(event) {
+            if (!checkLicensePermission("restore school data backup")) return;
+
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    const studentsList = importedData.studentsDataWithMarks || importedData.students;
+
+                    if (!studentsList || !Array.isArray(studentsList)) {
+                        return alert("⚠️ ಅಮಾನ್ಯ ಬ್ಯಾಕಪ್ ಫೈಲ್! ಇದರಲ್ಲಿ ಮಕ್ಕಳ ವಿವರಗಳು ದೊರೆಯಲಿಲ್ಲ.");
+                    }
+
+                    const confirmMsg = `ಖಚಿತವಾಗಿ ಈ ಬ್ಯಾಕಪ್ ಡೇಟಾವನ್ನು ಮರುಸ್ಥಾಪಿಸಬೇಕೇ (Restore)?\n\n` +
+                                       `🏫 ಶಾಲೆ: ${importedData.schoolInfo?.schoolName || importedData.schoolName || '-'}\n` +
+                                       `👥 ಒಟ್ಟು ಮಕ್ಕಳು: ${studentsList.length}\n\n` +
+                                       `ಈ ಡೇಟಾ ಶಾಶ್ವತವಾಗಿ ಸೇವ್ ಆಗುತ್ತದೆ.`;
+
+                    if (confirm(confirmMsg)) {
+                        ksrmsIsRestoring = true;
+
+                        sampleStudents = studentsList;
+                        if (importedData.appSettings) appSettings = { ...appSettings, ...importedData.appSettings };
+                        if (importedData.classTeachersMap) classTeachersMap = importedData.classTeachersMap;
+                        if (importedData.subjectMasterList) subjectMasterList = importedData.subjectMasterList;
+
+                        const activeDise = ksrmsGetActiveDise();
+                        ksrmsSaveToSchoolStorage(activeDise);
+
+                        if (db && currentSession.role === 'school') {
+                            await db.collection("ksrms_schools").doc(activeDise).set({
+                                students: ksrmsCleanData(sampleStudents),
+                                appSettings: ksrmsCleanData(appSettings),
+                                classTeachersMap: ksrmsCleanData(classTeachersMap),
+                                subjectMasterList: ksrmsCleanData(subjectMasterList),
+                                studentCount: sampleStudents.length,
+                                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                            }, { merge: true });
+                        }
+
+                        setTimeout(() => { ksrmsIsRestoring = false; }, 2000);
+
+                        onClassChangeHandle();
+                        renderSubjectTable();
+                        alert(`🎉 ಅಭಿನಂದನೆಗಳು! ಎಲ್ಲಾ ${sampleStudents.length} ಮಕ್ಕಳ ವಿವರ ಹಾಗೂ ಅಂಕಗಳು ಯಶಸ್ವಿಯಾಗಿ ರಿಸ್ಟೋರ್ ಆಗಿವೆ.`);
+                    }
+                } catch(err) {
+                    ksrmsIsRestoring = false;
+                    console.error("[KSRMS Restore] Error:", err);
+                    alert("ಬ್ಯಾಕಪ್ ಫೈಲ್ ಓದಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಸರಿಯಾದ .json ಫೈಲ್ ಆಯ್ಕೆ ಮಾಡಿ.");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        };
+
+        // ೧೨. ಪ್ರೈಮರಿ ಅಂಕಗಳು ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಕಳೆದುಹೋಗದಂತೆ ರಕ್ಷಣೆ
+        updateStudentMarkInlineFast = function(inputEl, stId, sub, testKey) {
+            if (!checkLicensePermission("enter marks")) {
+                inputEl.value = '';
+                return;
+            }
+
+            const st = sampleStudents.find(s => String(s.id) === String(stId));
+            if (!st) return;
+
+            if (!st.marks) st.marks = {};
+            if (!st.marks[sub]) st.marks[sub] = {};
+
+            const val = inputEl.value.trim();
+            st.marks[sub][testKey] = (val !== '' && !isNaN(val)) ? Number(val) : '';
+
+            const calc = calculateSubjectScores(st.marks[sub], st.cwsnStatus === 'Yes-Exempt', st.className);
+            const row = inputEl.closest('tr');
+
+            if (row) {
+                const cFa1 = row.querySelector('.col-cfa1'); if (cFa1) cFa1.innerText = calc.cFA1;
+                const gFa1 = row.querySelector('.col-gfa1'); if (gFa1) gFa1.innerText = calc.gFA1;
+                const cFa2 = row.querySelector('.col-cfa2'); if (cFa2) cFa2.innerText = calc.cFA2;
+                const gFa2 = row.querySelector('.col-gfa2'); if (gFa2) gFa2.innerText = calc.gFA2;
+                const cSa1 = row.querySelector('.col-csa1'); if (cSa1) cSa1.innerText = calc.cSA1;
+                const gSa1 = row.querySelector('.col-gsa1'); if (gSa1) gSa1.innerText = calc.gSA1;
+                const t1Tot = row.querySelector('.col-t1tot'); if (t1Tot) t1Tot.innerText = calc.t1Tot;
+
+                const cFa3 = row.querySelector('.col-cfa3'); if (cFa3) cFa3.innerText = calc.cFA3;
+                const gFa3 = row.querySelector('.col-gfa3'); if (gFa3) gFa3.innerText = calc.gFA3;
+                const cFa4 = row.querySelector('.col-cfa4'); if (cFa4) cFa4.innerText = calc.cFA4;
+                const gFa4 = row.querySelector('.col-gfa4'); if (gFa4) gFa4.innerText = calc.gFA4;
+                const cSa2 = row.querySelector('.col-csa2'); if (cSa2) cSa2.innerText = calc.cSA2;
+                const gSa2 = row.querySelector('.col-gsa2'); if (gSa2) gSa2.innerText = calc.gSA2;
+                const t2Tot = row.querySelector('.col-t2tot'); if (t2Tot) t2Tot.innerText = calc.t2Tot;
+
+                const grandTot = row.querySelector('.col-grandtot'); 
+                if (grandTot) grandTot.innerText = calc.hasMarks ? `${calc.subjectGrandTot} (${calc.gGrand})` : '-';
+            }
+
+            saveAndSyncAllData(false);
+        };
+
+        // ೧೩. ಹೈಸ್ಕೂಲ್ ಅಂಕಗಳು ಕಳೆದುಹೋಗದಂತೆ ರಕ್ಷಣೆ
+        updateHighSchoolMarkInline = function(inputEl, studentId) {
+            if (!checkLicensePermission("enter high school marks")) {
+                inputEl.value = '';
+                return;
+            }
+
+            const st = sampleStudents.find(s => String(s.id) === String(studentId));
+            if (!st) return;
+
+            const subKey = inputEl.getAttribute('data-sub');
+            const testKey = inputEl.getAttribute('data-test');
+            const fieldKey = inputEl.getAttribute('data-field');
+
+            if (!st.hsMarks) st.hsMarks = {};
+            if (!st.hsMarks[subKey]) st.hsMarks[subKey] = createBlankHighSchoolSubjectMarks(subKey);
+
+            let val = inputEl.value.trim();
+            const maxVal = parseFloat(inputEl.getAttribute('max')) || 100;
+            if (val !== "" && parseFloat(val) > maxVal) {
+                val = maxVal;
+                inputEl.value = maxVal;
+            }
+
+            st.hsMarks[subKey][testKey][fieldKey] = (val !== "" && !isNaN(val)) ? parseFloat(val) : "";
+
+            const calc = calculateSubjectFinalMarks(subKey, st.hsMarks[subKey], st.className);
+            const row = inputEl.closest('tr');
+            if (row) {
+                const elFa1Tot = row.querySelector('.col-fa1-tot'); if (elFa1Tot) elFa1Tot.innerText = calc.fa1Tot;
+                const elFa1G = row.querySelector('.col-fa1-grade'); if (elFa1G) elFa1G.innerText = calc.fa1Grade;
+                const elFa2Tot = row.querySelector('.col-fa2-tot'); if (elFa2Tot) elFa2Tot.innerText = calc.fa2Tot;
+                const elFa2G = row.querySelector('.col-fa2-grade'); if (elFa2G) elFa2G.innerText = calc.fa2Grade;
+                const elSa1Conv = row.querySelector('.col-sa1-conv'); if (elSa1Conv) elSa1Conv.innerText = calc.fa1fa2Conv;
+                const elSa1Tot = row.querySelector('.col-sa1-tot'); if (elSa1Tot) elSa1Tot.innerText = calc.sa1Total;
+                const elSa1G = row.querySelector('.col-sa1-grade'); if (elSa1G) elSa1G.innerText = calc.sa1Grade;
+                const elFa3Tot = row.querySelector('.col-fa3-tot'); if (elFa3Tot) elFa3Tot.innerText = calc.fa3Tot;
+                const elFa3G = row.querySelector('.col-fa3-grade'); if (elFa3G) elFa3G.innerText = calc.fa3Grade;
+                const elFa4Tot = row.querySelector('.col-fa4-tot'); if (elFa4Tot) elFa4Tot.innerText = calc.fa4Tot;
+                const elFa4G = row.querySelector('.col-fa4-grade'); if (elFa4G) elFa4G.innerText = calc.fa4Grade;
+                const elFa200Tot = row.querySelector('.col-fa200-tot'); if (elFa200Tot) elFa200Tot.innerText = calc.fa200Sum;
+                const elFa20Conv = row.querySelector('.col-fa20-conv'); if (elFa20Conv) elFa20Conv.innerText = calc.fa20Conv;
+                const elGrandTot = row.querySelector('.col-grand-tot'); if (elGrandTot) elGrandTot.innerText = calc.grandTotal;
+
+                const gradeEl = row.querySelector('.col-grade');
+                if (gradeEl) {
+                    gradeEl.innerText = calc.grandGrade;
+                    gradeEl.className = `badge ${calc.pass ? 'bg-success' : 'bg-danger'} col-grade`;
+                }
+
+                const statusEl = row.querySelector('.col-status');
+                if (statusEl) {
+                    statusEl.innerText = calc.pass ? 'Pass' : 'Fail';
+                    statusEl.className = `fw-bold ${calc.pass ? 'text-success' : 'text-danger'} col-status`;
+                }
+            }
+
+            saveAndSyncAllData(false);
+        };
+
+        // ೧೪. LOGOUT ಬಟನ್ UI ಅಳವಡಿಕೆ
+        (function injectLogoutUIButtons() {
+            function renderBtns() {
+                const topNavGroup = document.querySelector('nav .ms-auto');
+                const sessionBadge = document.getElementById('sessionStatusBadge');
+
+                if (topNavGroup && !document.getElementById('ksrmsGlobalLogoutBtn')) {
+                    const logoutBtn = document.createElement('button');
+                    logoutBtn.id = 'ksrmsGlobalLogoutBtn';
+                    logoutBtn.type = 'button';
+                    logoutBtn.className = 'btn btn-danger btn-sm fw-bold me-2 shadow-sm text-white no-print';
+                    logoutBtn.onclick = performSchoolLogout;
+                    logoutBtn.innerHTML = `<i class="fa-solid fa-power-off me-1"></i> ಲಾಗ್‌ಔಟ್ / Logout`;
+
+                    if (sessionBadge) {
+                        topNavGroup.insertBefore(logoutBtn, sessionBadge);
+                    } else {
+                        topNavGroup.appendChild(logoutBtn);
+                    }
+                }
+
+                const navContainer = document.querySelector('nav .container-fluid');
+                const togglerBtn = document.querySelector('.navbar-toggler');
+
+                if (navContainer && togglerBtn && !document.getElementById('ksrmsMobileHeaderLogoutBtn')) {
+                    const mobBtn = document.createElement('button');
+                    mobBtn.id = 'ksrmsMobileHeaderLogoutBtn';
+                    mobBtn.type = 'button';
+                    mobBtn.className = 'btn btn-danger btn-sm fw-bold d-xl-none ms-auto me-2 no-print shadow-sm text-white';
+                    mobBtn.onclick = performSchoolLogout;
+                    mobBtn.innerHTML = `<i class="fa-solid fa-power-off me-1"></i> Logout`;
+
+                    navContainer.insertBefore(mobBtn, togglerBtn);
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', renderBtns);
+            } else {
+                renderBtns();
+            }
+        })();
+
+        // ೧೫. UI ಗೋಚರತೆ ನವೀಕರಣ
+        const _origUpdateSessionUI = updateSessionUI;
+        updateSessionUI = function() {
+            if (typeof _origUpdateSessionUI === 'function') _origUpdateSessionUI();
+
+            const isLogged = (currentSession && currentSession.role === 'school');
+            const dBtn = document.getElementById('ksrmsGlobalLogoutBtn');
+            const mBtn = document.getElementById('ksrmsMobileHeaderLogoutBtn');
+
+            if (dBtn) dBtn.style.display = isLogged ? 'inline-block' : 'none';
+            if (mBtn) mBtn.style.display = isLogged ? 'inline-block' : 'none';
+        };
+
+        // ೧೬. ಸುರಕ್ಷಿತ ಪ್ರಾರಂಭಿಕ ಬೂಟ್ (ಡೇಟಾ ಕಳೆದುಹೋಗದಂತೆ ತಡೆಯುವುದು)
+        (function bootSafeIsolatedSystem() {
+            setTimeout(() => {
+                try {
+                    const saved = localStorage.getItem('ksrms_active_session');
+                    if (saved) currentSession = JSON.parse(saved);
+                } catch(e) {}
+
+                updateSessionUI();
+
+                if (currentSession && currentSession.role === 'school' && currentSession.diseCode) {
+                    loadSchoolDataFromStorage(currentSession.diseCode);
+                    subscribeToSchoolCloudData(currentSession.diseCode);
+                }
+                onClassChangeHandle();
+            }, 300);
+        })();
         
         
     </script>
