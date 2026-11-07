@@ -27334,6 +27334,718 @@ function injectBulkStudentEditModalHTML() {
             }, 100);
         })();
         
+
+        // ======================================================================
+        // KSRMS V5.0 — ಅಂಕಗಳು ಕಳೆದುಹೋಗದಂತೆ ಸುರಕ್ಷಿತ ಕ್ಲೌಡ್ ಸಿಂಕ್ (SAFE MERGE SYNC ENGINE)
+        // ----------------------------------------------------------------------
+        // ಹಳೆಯ ಸಮಸ್ಯೆ: ಪ್ರತಿ ಸೇವ್‌ನಲ್ಲಿ ಇಡೀ students ಪಟ್ಟಿಯನ್ನು ಕ್ಲೌಡ್‌ಗೆ ಬರೆಯಲಾಗುತ್ತಿತ್ತು.
+        // ಇಬ್ಬರು ಶಿಕ್ಷಕರು (ಅಥವಾ ಒಂದೇ ಶಿಕ್ಷಕರ ಎರಡು ಮೊಬೈಲ್/ಟ್ಯಾಬ್) ಒಂದೇ ಸಮಯದಲ್ಲಿ ಅಂಕ
+        // ಹಾಕಿದರೆ, ಕೊನೆಯಲ್ಲಿ ಸೇವ್ ಮಾಡಿದವರ ಹಳೆಯ ಪ್ರತಿ ಉಳಿದವರ ಅಂಕಗಳನ್ನು ಅಳಿಸುತ್ತಿತ್ತು.
+        //
+        // ಹೊಸ ವಿಧಾನ:
+        //  1. ಈ ಸಾಧನದಲ್ಲಿ "ಏನು ಬದಲಾಯಿತು" (ಪ್ರತಿ ಅಂಕ ಮಟ್ಟದಲ್ಲಿ) ಎಂಬುದನ್ನು ಮಾತ್ರ ಲೆಕ್ಕ ಹಾಕುತ್ತದೆ.
+        //  2. Firestore Transaction ಮೂಲಕ ಕ್ಲೌಡ್‌ನ ಇತ್ತೀಚಿನ ಡೇಟಾ ಓದಿ, ಆ ಬದಲಾವಣೆಗಳನ್ನು ಮಾತ್ರ
+        //     ಅದರ ಮೇಲೆ ಸೇರಿಸಿ ಬರೆಯುತ್ತದೆ → ಬೇರೆಯವರ ಅಂಕಗಳು ಅಳಿಯುವುದಿಲ್ಲ.
+        //  3. ಕ್ಲೌಡ್‌ನಿಂದ ಹೊಸ ಡೇಟಾ ಬಂದಾಗ, ಇನ್ನೂ ಸೇವ್ ಆಗದ ಸ್ಥಳೀಯ ಅಂಕಗಳನ್ನು ಉಳಿಸಿಕೊಳ್ಳುತ್ತದೆ.
+        //  4. ಹಳೆಯ cache / ಹಳೆಯ ವರ್ಷದ ಡೇಟಾ ಪ್ರಸ್ತುತ ವರ್ಷದ ಡೇಟಾವನ್ನು ಓವರ್‌ರೈಟ್ ಮಾಡುವುದಿಲ್ಲ.
+        //  5. ಸೇವ್ ವಿಫಲವಾದರೆ (ಆಫ್‌ಲೈನ್ / ಡೇಟಾ ತುಂಬಾ ದೊಡ್ಡದು) ಪರದೆಯ ಮೇಲೆ ಎಚ್ಚರಿಕೆ ತೋರಿಸುತ್ತದೆ.
+        // ======================================================================
+        (function KSRMS_SafeSyncV5() {
+            const SEP = '\u0001';
+            const STORE_PREFIX = 'ksrms_v5_store_';
+            const LEGACY_KEYS = ['ksrms_data_', 'ksrms_permanent_store_', 'ksrms_school_data_', 'ksrms_cache_', 'ksrms_emergency_marks_backup_'];
+            const MAX_DOC_BYTES = 1040000;   // Firestore 1 MiB ಮಿತಿ (ಸ್ವಲ್ಪ ಅಂತರ ಬಿಟ್ಟು)
+            const WARN_DOC_BYTES = 850000;
+
+            const st = {
+                dise: null, loaded: false, ready: false,
+                base: null, baseRev: 0, carry: null,
+                legacyModel: null, liveYear: null,
+                archiveMode: false, archiveYear: null, archiveBusy: false,
+                pushing: false, again: false, pushTimer: null, storeTimer: null, retryTimer: null,
+                renderPending: false, ownerArray: null, massOk: false, lastBytes: 0
+            };
+            window.ksrmsSyncState = st; // ಡೀಬಗ್‌ಗಾಗಿ
+
+            // ---------------- ಸಣ್ಣ ಸಹಾಯಕ ಫಂಕ್ಷನ್‌ಗಳು ----------------
+            const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+            const clone = v => { try { return JSON.parse(JSON.stringify(v === undefined ? null : v, (k, x) => (x === undefined ? '' : x))); } catch (e) { return v; } };
+            const isRestoring = () => {
+                try { if (typeof ksrmsIsRestoring !== 'undefined' && ksrmsIsRestoring) return true; } catch (e) {}
+                try { if (typeof ksrmsIsRestoringBackup !== 'undefined' && ksrmsIsRestoringBackup) return true; } catch (e) {}
+                return false;
+            };
+            const isEditing = () => {
+                const a = document.activeElement;
+                return !!(a && (a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'TEXTAREA'));
+            };
+            const isSchool = () => !!(currentSession && currentSession.isLoggedIn && currentSession.role === 'school');
+
+            // ಎಲ್ಲಾ ಮಕ್ಕಳಿಗೂ ಖಚಿತ, ವಿಶಿಷ್ಟ id ಇರುವಂತೆ ಮಾಡುವುದು (ಒಂದೇ id ಎರಡು ಮಕ್ಕಳಿಗೆ ಇದ್ದರೆ ಒಬ್ಬರು ಕಳೆದುಹೋಗಬಾರದು)
+            function normalizeIds(arr) {
+                const seen = {};
+                (arr || []).forEach((s, i) => {
+                    if (!isObj(s)) return;
+                    let id = (s.id === undefined || s.id === null || s.id === '') ? ('auto_' + i + '_' + String(s.name || '').replace(/\s+/g, '_')) : String(s.id);
+                    if (seen[id]) { let n = 2; while (seen[id + '_dup' + n]) n++; id = id + '_dup' + n; }
+                    seen[id] = true;
+                    s.id = id;
+                });
+            }
+
+            function toModel(students, A, T, L) {
+                const arr = Array.isArray(students) ? students.filter(isObj) : [];
+                normalizeIds(arr);
+                const S = {}, O = [];
+                arr.forEach(s => { S[s.id] = clone(s); O.push(s.id); });
+                return { S, O, A: isObj(A) ? clone(A) : {}, T: isObj(T) ? clone(T) : {}, L: Array.isArray(L) ? clone(L) : (L ? clone(L) : []) };
+            }
+            const localModel = () => toModel(sampleStudents, appSettings, classTeachersMap, subjectMasterList);
+            const cloudModel = d => toModel((d && d.students) || [], d && d.appSettings, d && d.classTeachersMap, d && d.subjectMasterList);
+
+            function flat(obj, pre, out) {
+                Object.keys(obj).forEach(k => {
+                    const v = obj[k];
+                    const p = pre ? pre + SEP + k : k;
+                    if (isObj(v) && Object.keys(v).length) flat(v, p, out);
+                    else out[p] = JSON.stringify(v === undefined ? '' : v);
+                });
+                return out;
+            }
+            const flatModel = m => flat({ S: m.S, A: m.A, T: m.T, L: { v: m.L } }, '', {});
+
+            const emptyOps = () => ({ sets: {}, dels: {}, added: [], removed: [] });
+            const opsEmpty = o => !o || (!Object.keys(o.sets).length && !Object.keys(o.dels).length && !o.added.length && !o.removed.length);
+
+            function diff(local, base) {
+                const o = emptyOps();
+                if (!local || !base) return o;
+                const fl = flatModel(local), fb = flatModel(base);
+                for (const p in fl) if (fb[p] !== fl[p]) o.sets[p] = fl[p];
+                for (const p in fb) if (!(p in fl)) o.dels[p] = true;
+                o.added = local.O.filter(id => !(id in base.S));
+                o.removed = base.O.filter(id => !(id in local.S));
+                return o;
+            }
+
+            function compose(a, b) {
+                if (!a) return b || emptyOps();
+                if (!b) return a;
+                const o = { sets: Object.assign({}, a.sets), dels: Object.assign({}, a.dels), added: [], removed: [] };
+                for (const p in b.dels) { delete o.sets[p]; o.dels[p] = true; }
+                for (const p in b.sets) { delete o.dels[p]; o.sets[p] = b.sets[p]; }
+                const bAdd = new Set(b.added), bRem = new Set(b.removed);
+                o.added = Array.from(new Set(a.added.concat(b.added))).filter(id => !bRem.has(id));
+                o.removed = Array.from(new Set(a.removed.filter(id => !bAdd.has(id)).concat(b.removed)));
+                return o;
+            }
+
+            // ಬದಲಾವಣೆಗಳನ್ನು ಕ್ಲೌಡ್ ಡೇಟಾದ ಮೇಲೆ ಸೇರಿಸುವುದು (ಬೇರೆಯವರ ಅಂಕಗಳನ್ನು ಮುಟ್ಟದೆ)
+            function apply(cloud, ops, localOrder) {
+                const m = clone(cloud);
+                if (!ops) return m;
+                const added = new Set(ops.added);
+                ops.removed.forEach(id => { delete m.S[id]; });
+                const root = { S: m.S, A: m.A, T: m.T, L: { v: m.L } };
+
+                const okPath = parts => {
+                    if (parts[0] !== 'S') return true;
+                    const id = parts[1];
+                    if (id in m.S) return true;
+                    if (added.has(id)) { m.S[id] = {}; return true; }
+                    return false; // ಬೇರೆ ಸಾಧನದಲ್ಲಿ ಡಿಲೀಟ್ ಆದ ಮಗು → ಮತ್ತೆ ಸೇರಿಸಬೇಡಿ
+                };
+
+                Object.keys(ops.dels).forEach(p => {
+                    const parts = p.split(SEP);
+                    if (!okPath(parts)) return;
+                    let cur = root;
+                    for (let i = 0; i < parts.length - 1; i++) { cur = cur[parts[i]]; if (!isObj(cur)) return; }
+                    const last = parts[parts.length - 1];
+                    const v = cur[last];
+                    if (isObj(v) && Object.keys(v).length) return; // ಬೇರೆಯವರ ಹೊಸ ಅಂಕಗಳಿವೆ → ಉಳಿಸಿ
+                    delete cur[last];
+                });
+
+                Object.keys(ops.sets).forEach(p => {
+                    const parts = p.split(SEP);
+                    if (!okPath(parts)) return;
+                    let cur = root;
+                    for (let i = 0; i < parts.length - 1; i++) {
+                        const k = parts[i];
+                        if (!isObj(cur[k])) cur[k] = {};
+                        cur = cur[k];
+                    }
+                    const last = parts[parts.length - 1];
+                    let val; try { val = JSON.parse(ops.sets[p]); } catch (e) { val = ''; }
+                    if (isObj(val) && !Object.keys(val).length && isObj(cur[last]) && Object.keys(cur[last]).length) return;
+                    cur[last] = val;
+                });
+
+                m.A = root.A; m.T = root.T; m.L = root.L.v;
+                Object.keys(m.S).forEach(id => { if (isObj(m.S[id])) m.S[id].id = id; });
+                // ಕ್ರಮ: ಕ್ಲೌಡ್ ಕ್ರಮ + ಹೊಸ ಮಕ್ಕಳು ಕೊನೆಯಲ್ಲಿ
+                const order = m.O.filter(id => id in m.S);
+                const inOrder = new Set(order);
+                const extra = (localOrder || ops.added).filter(id => added.has(id) && (id in m.S) && !inOrder.has(id));
+                extra.forEach(id => { order.push(id); inOrder.add(id); });
+                Object.keys(m.S).forEach(id => { if (!inOrder.has(id)) order.push(id); });
+                m.O = order;
+                return m;
+            }
+
+            // ಹಳೆಯ ಆವೃತ್ತಿಯ ಸ್ಥಳೀಯ ಪ್ರತಿಯಿಂದ, ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಖಾಲಿ ಇರುವ ಅಂಕಗಳನ್ನು ಮಾತ್ರ ಮರುಪಡೆಯುವುದು
+            function recoveryOps(oldLocal, cloud) {
+                const o = emptyOps();
+                let count = 0;
+                if (!oldLocal || !cloud) return { ops: o, count };
+                const fl = flat({ S: oldLocal.S }, '', {});
+                const fc = flat({ S: cloud.S }, '', {});
+                const empty = v => v === undefined || v === '""' || v === 'null' || v === '{}' || v === '[]';
+                for (const p in fl) {
+                    const parts = p.split(SEP);
+                    if (parts.length < 4) continue;
+                    if (!(parts[1] in cloud.S)) continue;
+                    if (parts[2] !== 'marks' && parts[2] !== 'hsMarks') continue;
+                    if (empty(fl[p])) continue;
+                    if (!empty(fc[p])) continue;
+                    // ಮೇಲಿನ ಮಟ್ಟದಲ್ಲಿ ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಸಂಖ್ಯೆ/ಪಠ್ಯ ಇದ್ದರೆ ಬಿಟ್ಟುಬಿಡಿ
+                    let blocked = false;
+                    for (let i = 3; i < parts.length; i++) {
+                        const pre = parts.slice(0, i).join(SEP);
+                        if (pre in fc && !empty(fc[pre])) { blocked = true; break; }
+                    }
+                    if (blocked) continue;
+                    o.sets[p] = fl[p];
+                    count++;
+                }
+                return { ops: o, count };
+            }
+
+            function setGlobalsFromModel(m) {
+                const arr = m.O.map(id => m.S[id]).filter(isObj);
+                sampleStudents = arr;
+                st.ownerArray = arr;
+                appSettings = Object.assign({}, appSettings, m.A);
+                classTeachersMap = Object.assign({}, classTeachersMap, m.T);
+                if (Array.isArray(m.L) && m.L.length) subjectMasterList = m.L;
+            }
+
+            // ---------------- ಸ್ಟೇಟಸ್ ಚಿಪ್ ಮತ್ತು ಎಚ್ಚರಿಕೆ ----------------
+            function ui() {
+                let chip = document.getElementById('ksrmsSyncChip');
+                if (!chip && document.body) {
+                    chip = document.createElement('div');
+                    chip.id = 'ksrmsSyncChip';
+                    chip.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99999;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.25);max-width:92vw;pointer-events:auto;display:none;font-family:inherit;';
+                    document.body.appendChild(chip);
+                }
+                return chip;
+            }
+            function setStatus(kind, extra) {
+                const chip = ui();
+                if (!chip) return;
+                if (!isSchool()) { chip.style.display = 'none'; return; }
+                const map = {
+                    saving:  ['#fff3cd', '#664d03', '⏳ ಕ್ಲೌಡ್‌ಗೆ ಸೇವ್ ಆಗುತ್ತಿದೆ...'],
+                    saved:   ['#d1e7dd', '#0f5132', '☁️ ಎಲ್ಲಾ ಅಂಕಗಳು ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಸೇವ್ ಆಗಿವೆ'],
+                    waiting: ['#e2e3e5', '#41464b', '⏳ ಕ್ಲೌಡ್ ಡೇಟಾ ಲೋಡ್ ಆಗುತ್ತಿದೆ... (ನಿಮ್ಮ ಅಂಕಗಳು ಈ ಸಾಧನದಲ್ಲಿ ಸುರಕ್ಷಿತ)'],
+                    offline: ['#ffe5d0', '#842029', '📴 ಇಂಟರ್ನೆಟ್ ಇಲ್ಲ — ಅಂಕಗಳು ಈ ಸಾಧನದಲ್ಲಿ ಸುರಕ್ಷಿತ. ನೆಟ್ ಬಂದ ತಕ್ಷಣ ಕ್ಲೌಡ್‌ಗೆ ಹೋಗುತ್ತವೆ. ಈ ಪೇಜ್ ಮುಚ್ಚಬೇಡಿ / ಡೇಟಾ ಕ್ಲಿಯರ್ ಮಾಡಬೇಡಿ.'],
+                    error:   ['#f8d7da', '#842029', '⚠️ ಕ್ಲೌಡ್ ಸೇವ್ ವಿಫಲವಾಗಿದೆ'],
+                    archive: ['#cfe2ff', '#084298', '📁 ಹಳೆಯ ವರ್ಷದ ದಾಖಲೆ ವೀಕ್ಷಣೆ']
+                };
+                const c = map[kind] || map.saved;
+                chip.style.display = 'block';
+                chip.style.background = c[0];
+                chip.style.color = c[1];
+                chip.innerHTML = c[2] + (extra ? ' ' + extra : '');
+                if (kind === 'saved') {
+                    clearTimeout(chip._t);
+                    chip._t = setTimeout(() => { if (chip.innerHTML.indexOf('☁️') === 0) chip.style.opacity = '0.55'; }, 2500);
+                    chip.style.opacity = '1';
+                } else chip.style.opacity = '1';
+            }
+            function toast(msg) {
+                try {
+                    const t = document.createElement('div');
+                    t.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:100000;background:#0f5132;color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:92vw;';
+                    t.textContent = msg;
+                    document.body.appendChild(t);
+                    setTimeout(() => t.remove(), 7000);
+                } catch (e) {}
+            }
+
+            // ---------------- ರೆಂಡರ್ (ಟೈಪ್ ಮಾಡುತ್ತಿರುವಾಗ ತಡೆಹಿಡಿಯುವುದು) ----------------
+            function doRender() {
+                st.renderPending = false;
+                try { onClassChangeHandle(); } catch (e) { console.warn('[KSRMS V5] render', e); }
+                try { if (typeof renderSubjectTable === 'function') renderSubjectTable(); } catch (e) {}
+            }
+            function render() {
+                if (isEditing()) { st.renderPending = true; return; }
+                doRender();
+            }
+            document.addEventListener('focusout', () => {
+                setTimeout(() => { if (st.renderPending && !isEditing()) doRender(); }, 150);
+            });
+
+            // ---------------- ಸ್ಥಳೀಯ ಸಂಗ್ರಹ (ಒಂದೇ key, ಜಾಗ ಉಳಿತಾಯ) ----------------
+            function pendingOps() {
+                if (!st.base) return st.carry || null;
+                return compose(st.carry, diff(localModel(), st.base));
+            }
+            function storeNow() {
+                clearTimeout(st.storeTimer);
+                const dise = st.dise;
+                if (!dise || st.archiveMode || !isSchool()) return;
+                let payload;
+                try {
+                    payload = JSON.stringify({
+                        v: 5,
+                        students: clone(sampleStudents),
+                        appSettings: clone(appSettings),
+                        classTeachersMap: clone(classTeachersMap),
+                        subjectMasterList: clone(subjectMasterList),
+                        pending: st.ready ? pendingOps() : null,
+                        provisionalPending: st.ready ? null : pendingOps(),
+                        legacy: !st.ready && !!st.legacyModel,
+                        legacyStudents: (!st.ready && st.legacyModel) ? st.legacyModel.O.map(id => st.legacyModel.S[id]) : undefined,
+                        savedAt: Date.now()
+                    });
+                } catch (e) { return; }
+                const key = STORE_PREFIX + dise;
+                try {
+                    localStorage.setItem(key, payload);
+                } catch (e) {
+                    // ಜಾಗ ಸಾಲದಿದ್ದರೆ ಹಳೆಯ ನಕಲುಗಳನ್ನು ತೆಗೆದು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ
+                    try {
+                        if (st.ready) LEGACY_KEYS.forEach(k => localStorage.removeItem(k + dise));
+                        Object.keys(localStorage).forEach(k => { if (k.indexOf('ksrms_archive_') === 0) localStorage.removeItem(k); });
+                        localStorage.setItem(key, payload);
+                    } catch (e2) {
+                        console.error('[KSRMS V5] localStorage full', e2);
+                    }
+                }
+            }
+            function storeSoon() {
+                clearTimeout(st.storeTimer);
+                st.storeTimer = setTimeout(storeNow, 400);
+            }
+
+            function readLegacy(dise) {
+                for (const k of LEGACY_KEYS) {
+                    try {
+                        const s = localStorage.getItem(k + dise);
+                        if (!s) continue;
+                        const p = JSON.parse(s);
+                        if (p && Array.isArray(p.students) && p.students.length) return p;
+                    } catch (e) {}
+                }
+                return null;
+            }
+
+            function resetState(dise) {
+                clearTimeout(st.pushTimer); clearTimeout(st.storeTimer); clearTimeout(st.retryTimer);
+                Object.assign(st, {
+                    dise: dise, loaded: false, ready: false, base: null, baseRev: 0, carry: null,
+                    legacyModel: null, liveYear: null, archiveMode: false, archiveYear: null, archiveBusy: false,
+                    pushing: false, again: false, renderPending: false, ownerArray: null, massOk: false
+                });
+            }
+
+            function loadLocal(dise) {
+                let raw = null;
+                try { raw = JSON.parse(localStorage.getItem(STORE_PREFIX + dise) || 'null'); } catch (e) { raw = null; }
+                if (raw && Array.isArray(raw.students)) {
+                    sampleStudents = raw.students;
+                    if (raw.appSettings) appSettings = Object.assign({}, appSettings, raw.appSettings);
+                    if (raw.classTeachersMap) classTeachersMap = Object.assign({}, classTeachersMap, raw.classTeachersMap);
+                    if (Array.isArray(raw.subjectMasterList) && raw.subjectMasterList.length) subjectMasterList = raw.subjectMasterList;
+                    normalizeIds(sampleStudents);
+                    st.base = localModel(); // ತಾತ್ಕಾಲಿಕ ಆಧಾರ
+                    st.carry = raw.pending || raw.provisionalPending || null;
+                    if (raw.legacy && Array.isArray(raw.legacyStudents)) st.legacyModel = toModel(raw.legacyStudents, {}, {}, []);
+                    st.ownerArray = sampleStudents;
+                    st.loaded = true;
+                    return true;
+                }
+                const legacy = readLegacy(dise);
+                if (legacy) {
+                    sampleStudents = legacy.students;
+                    if (legacy.appSettings) appSettings = Object.assign({}, appSettings, legacy.appSettings);
+                    if (legacy.classTeachersMap) classTeachersMap = Object.assign({}, classTeachersMap, legacy.classTeachersMap);
+                    if (Array.isArray(legacy.subjectMasterList) && legacy.subjectMasterList.length) subjectMasterList = legacy.subjectMasterList;
+                    normalizeIds(sampleStudents);
+                    st.legacyModel = localModel();
+                    st.base = localModel();
+                    st.carry = null;
+                    st.ownerArray = sampleStudents;
+                    st.loaded = true;
+                    return true;
+                }
+                // ಈ ಸಾಧನದಲ್ಲಿ ಏನೂ ಇಲ್ಲ → ಕ್ಲೌಡ್‌ಗಾಗಿ ಕಾಯಿರಿ (ಡೆಮೋ ಡೇಟಾ ಕ್ಲೌಡ್‌ಗೆ ಹೋಗಬಾರದು)
+                sampleStudents = [];
+                st.ownerArray = sampleStudents;
+                st.base = null;
+                st.loaded = true;
+                return false;
+            }
+
+            // ---------------- ಕ್ಲೌಡ್‌ಗೆ ಸುರಕ್ಷಿತ ಪುಶ್ (Transaction) ----------------
+            function canPush() {
+                return !!(db && st.dise && st.ready && !st.archiveMode && !st.archiveBusy && isSchool() &&
+                          ksrmsGetActiveDise() === st.dise && !isRestoring());
+            }
+            function schedulePush(delay) {
+                clearTimeout(st.pushTimer);
+                st.pushTimer = setTimeout(push, delay === undefined ? 800 : delay);
+            }
+            function bytesOf(obj) {
+                try { return new TextEncoder().encode(JSON.stringify(obj)).length; } catch (e) { return JSON.stringify(obj).length * 2; }
+            }
+
+            async function push() {
+                if (!canPush()) {
+                    if (isSchool() && st.dise && !st.ready) setStatus('waiting');
+                    return;
+                }
+                if (st.pushing) { st.again = true; return; }
+
+                let pre = pendingOps();
+                if (opsEmpty(pre)) { setStatus('saved'); return; }
+
+                // ಸುರಕ್ಷತೆ: ಒಮ್ಮೆಲೇ ಅನೇಕ ಮಕ್ಕಳು ಅಳಿಸಲ್ಪಡುತ್ತಿದ್ದರೆ ದೃಢೀಕರಣ ಕೇಳಿ
+                if (pre.removed.length >= 10 && !st.massOk) {
+                    const ok = confirm(`⚠️ ಎಚ್ಚರಿಕೆ: ${pre.removed.length} ಮಕ್ಕಳ ದಾಖಲೆಗಳು ಕ್ಲೌಡ್‌ನಿಂದ ಶಾಶ್ವತವಾಗಿ ಅಳಿಸಲ್ಪಡುತ್ತವೆ.\n\nನೀವೇ ಉದ್ದೇಶಪೂರ್ವಕವಾಗಿ ಅಳಿಸಿದ್ದರೆ ಮಾತ್ರ OK ಒತ್ತಿ.\nಇಲ್ಲದಿದ್ದರೆ Cancel ಒತ್ತಿ — ಆ ಮಕ್ಕಳನ್ನು ಮರಳಿ ತರಲಾಗುತ್ತದೆ.`);
+                    if (!ok) {
+                        pre.removed.forEach(id => { if (st.base.S[id]) sampleStudents.push(clone(st.base.S[id])); });
+                        st.ownerArray = sampleStudents;
+                        if (st.carry) st.carry.removed = [];
+                        storeNow(); render();
+                        pre = pendingOps();
+                        if (opsEmpty(pre)) { setStatus('saved'); return; }
+                    }
+                }
+                st.massOk = false;
+
+                st.pushing = true;
+                setStatus('saving');
+                const dise = st.dise;
+                const ref = db.collection('ksrms_schools').doc(dise);
+                try {
+                    const result = await db.runTransaction(async tx => {
+                        const snap = await tx.get(ref);
+                        const data = snap.exists ? (snap.data() || {}) : {};
+                        const C = cloudModel(data);
+                        const L = localModel();
+                        const ops = compose(st.carry, diff(L, st.base));
+                        if (opsEmpty(ops)) return { noop: true };
+                        const M = apply(C, ops, L.O);
+                        const rev = (Number(data.ksrmsRev) || 0) + 1;
+                        const students = M.O.map(id => M.S[id]);
+                        const payload = {
+                            students: students,
+                            appSettings: M.A,
+                            classTeachersMap: M.T,
+                            subjectMasterList: M.L,
+                            studentCount: students.length,
+                            ksrmsRev: rev,
+                            ksrmsSyncVersion: 5,
+                            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        const bytes = bytesOf(payload);
+                        st.lastBytes = bytes;
+                        if (bytes > MAX_DOC_BYTES) { const e = new Error('too-big'); e.code = 'ksrms/too-big'; e.bytes = bytes; throw e; }
+                        if (snap.exists) tx.update(ref, payload); else tx.set(ref, payload);
+                        return { M, rev };
+                    });
+
+                    if (st.dise !== dise) return;
+                    if (result && !result.noop) {
+                        // ಈ ನಡುವೆ ಟೈಪ್ ಮಾಡಿದ ಅಂಕಗಳನ್ನು ಉಳಿಸಿಕೊಂಡು ಹೊಸ ಕ್ಲೌಡ್ ಡೇಟಾದ ಮೇಲೆ ಜೋಡಿಸುವುದು
+                        const L2 = localModel();
+                        const opsNow = compose(st.carry, diff(L2, st.base));
+                        const merged = apply(result.M, opsNow, L2.O);
+                        st.base = result.M;
+                        st.baseRev = result.rev;
+                        st.carry = null;
+                        st.liveYear = (result.M.A && result.M.A.academicYear) || st.liveYear;
+                        const changedOthers = JSON.stringify(merged.O) !== JSON.stringify(L2.O) || diffHasOthers(L2, merged);
+                        setGlobalsFromModel(merged);
+                        storeNow();
+                        if (changedOthers) render();
+                    }
+                    const extra = st.lastBytes > WARN_DOC_BYTES ? `<br><small>⚠️ ಶಾಲೆಯ ಡೇಟಾ ಗಾತ್ರ ${(st.lastBytes / 1048576 * 100).toFixed(0)}% ತಲುಪಿದೆ — ಹಳೆಯ/ಬೇಡದ ದಾಖಲೆಗಳನ್ನು ತೆಗೆಯಿರಿ.</small>` : '';
+                    setStatus('saved', extra);
+                } catch (err) {
+                    console.error('[KSRMS V5] cloud save failed', err);
+                    if (err && err.code === 'ksrms/too-big') {
+                        setStatus('error', `<br><small>ಶಾಲೆಯ ಒಟ್ಟು ಡೇಟಾ ಕ್ಲೌಡ್ ಮಿತಿ (1 MB) ಮೀರಿದೆ. ಅಂಕಗಳು ಈ ಸಾಧನದಲ್ಲಿ ಮಾತ್ರ ಇವೆ. Backup ಡೌನ್‌ಲೋಡ್ ಮಾಡಿ ಮತ್ತು Admin ಸಂಪರ್ಕಿಸಿ.</small>`);
+                    } else if (err && (err.code === 'permission-denied')) {
+                        setStatus('error', '<br><small>ಅನುಮತಿ ಇಲ್ಲ (permission-denied). ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ.</small>');
+                    } else {
+                        setStatus('offline');
+                        clearTimeout(st.retryTimer);
+                        st.retryTimer = setTimeout(() => schedulePush(0), 20000);
+                    }
+                    storeNow();
+                } finally {
+                    st.pushing = false;
+                    if (st.again) { st.again = false; schedulePush(300); }
+                }
+            }
+
+            // ಸ್ಥಳೀಯವಾಗಿ ಕಾಣುವ ಡೇಟಾ ಬದಲಾದರೆ ಮಾತ್ರ ಮರು-ರೆಂಡರ್
+            function diffHasOthers(a, b) {
+                const fa = flat({ S: a.S }, '', {}), fb = flat({ S: b.S }, '', {});
+                for (const p in fb) if (fa[p] !== fb[p]) return true;
+                for (const p in fa) if (!(p in fb)) return true;
+                return false;
+            }
+
+            // ---------------- ಕ್ಲೌಡ್ ಲಿಸನರ್ ----------------
+            function onCloud(doc, dise) {
+                if (st.dise !== dise) return;
+                if (!doc.metadata || doc.metadata.hasPendingWrites) return;
+                if (doc.metadata.fromCache) { if (!st.ready) setStatus('waiting'); return; } // ಹಳೆಯ cache ನಂಬಬೇಡಿ
+                if (isRestoring()) return;
+
+                const data = doc.exists ? (doc.data() || {}) : {};
+                const rev = Number(data.ksrmsRev) || 0;
+                if (st.ready && rev < st.baseRev) return; // ಹಳೆಯ ಸ್ನ್ಯಾಪ್‌ಶಾಟ್
+                const C = cloudModel(data);
+
+                if (st.archiveMode || st.archiveBusy) {
+                    // ಹಳೆಯ ವರ್ಷ ನೋಡುತ್ತಿರುವಾಗ: ಪ್ರಸ್ತುತ ವರ್ಷದ ಕ್ಲೌಡ್ ಡೇಟಾವನ್ನು ಹಿನ್ನೆಲೆಯಲ್ಲಿ ಮಾತ್ರ ಇಟ್ಟುಕೊಳ್ಳಿ
+                    st.base = C; st.baseRev = rev; st.liveYear = C.A.academicYear || st.liveYear;
+                    return;
+                }
+
+                let ops = null, recovered = 0;
+                if (!st.ready) {
+                    if (st.legacyModel) {
+                        const r = recoveryOps(st.legacyModel, C);
+                        recovered = r.count;
+                        ops = compose(r.ops, st.base ? diff(localModel(), st.base) : null);
+                    } else if (st.base) {
+                        ops = compose(st.carry, diff(localModel(), st.base));
+                    }
+                    if (!doc.exists && st.base) {
+                        // ಕ್ಲೌಡ್‌ನಲ್ಲಿ ಡಾಕ್ಯುಮೆಂಟ್ ಇಲ್ಲ → ಈ ಸಾಧನದ ಎಲ್ಲಾ ಡೇಟಾ ಅಪ್‌ಲೋಡ್ ಮಾಡಿ
+                        ops = diff(localModel(), toModel([], {}, {}, []));
+                    }
+                } else {
+                    ops = compose(st.carry, diff(localModel(), st.base));
+                }
+
+                const L = localModel();
+                const merged = apply(C, ops, L.O);
+                const needRender = !st.ready || diffHasOthers(L, merged) || JSON.stringify(L.O) !== JSON.stringify(merged.O);
+
+                st.base = C;
+                st.baseRev = rev;
+                st.carry = null;
+                st.liveYear = C.A.academicYear || appSettings.academicYear || st.liveYear;
+                const wasLegacy = !!st.legacyModel;
+                st.legacyModel = null;
+                st.ready = true;
+
+                setGlobalsFromModel(merged);
+                storeNow();
+                if (wasLegacy) { try { LEGACY_KEYS.forEach(k => localStorage.removeItem(k + dise)); } catch (e) {} }
+
+                if (!opsEmpty(diff(localModel(), st.base))) schedulePush(300);
+                else setStatus('saved');
+                if (needRender) render();
+                if (recovered > 0) toast(`✅ ಈ ಸಾಧನದಲ್ಲಿ ಮಾತ್ರ ಉಳಿದಿದ್ದ ${recovered} ಅಂಕಗಳನ್ನು ಮರುಪಡೆದು ಕ್ಲೌಡ್‌ಗೆ ಸೇರಿಸಲಾಗಿದೆ.`);
+            }
+
+            // ---------------- ಜಾಗತಿಕ ಫಂಕ್ಷನ್‌ಗಳ ಬದಲಿ ----------------
+            loadSchoolDataFromStorage = function (dise) {
+                if (!dise || dise === 'ALL') return false;
+                dise = String(dise).trim();
+                if (st.dise === dise && st.loaded && sampleStudents === st.ownerArray) return true;
+                resetState(dise);
+                return loadLocal(dise);
+            };
+
+            ksrmsSaveToStorage = function (dise) {
+                if (!dise) return;
+                if (st.dise !== String(dise).trim()) return;
+                storeNow();
+            };
+
+            saveAndSyncAllData = async function (isImmediate) {
+                const dise = ksrmsGetActiveDise();
+                if (!dise || dise === 'ALL' || !isSchool()) return;
+                if (st.dise !== dise) { loadSchoolDataFromStorage(dise); }
+                if (st.archiveBusy) return;
+                if (st.archiveMode) { saveArchiveSoon(); return; }
+                if (isImmediate === true) { storeNow(); clearTimeout(st.pushTimer); await push(); }
+                else { storeSoon(); schedulePush(800); }
+            };
+
+            syncSchoolDataToCloud = function () { return saveAndSyncAllData(false); };
+
+            subscribeToSchoolCloudData = function (diseCode) {
+                if (!diseCode || diseCode === 'ALL') return;
+                const dise = String(diseCode).trim();
+                if (firestoreUnsubscribe) { try { firestoreUnsubscribe(); } catch (e) {} firestoreUnsubscribe = null; }
+                // ಬೇರೆ ಶಾಲೆ ಅಥವಾ ಲಾಗ್‌ಔಟ್ ನಂತರ ಡೆಮೋ ಡೇಟಾ ಬಂದಿದ್ದರೆ → ಹೊಸದಾಗಿ ಲೋಡ್ ಮಾಡಿ
+                if (st.dise !== dise || !st.loaded || sampleStudents !== st.ownerArray) {
+                    resetState(dise);
+                    loadLocal(dise);
+                }
+                try { onClassChangeHandle(); } catch (e) {}
+                if (!db) return;
+                setStatus(st.ready ? 'saved' : 'waiting');
+                firestoreUnsubscribe = db.collection('ksrms_schools').doc(dise).onSnapshot(
+                    { includeMetadataChanges: true },
+                    doc => { try { onCloud(doc, dise); } catch (e) { console.error('[KSRMS V5] listener', e); } },
+                    err => { console.error('[KSRMS V5] Subscription Error:', err); setStatus('offline'); }
+                );
+            };
+
+            // ---------------- ಶೈಕ್ಷಣಿಕ ವರ್ಷ ಬದಲಾವಣೆ (ಹಳೆಯ ವರ್ಷ = ಪ್ರತ್ಯೇಕ ವೀಕ್ಷಣೆ) ----------------
+            let archiveTimer = null;
+            function saveArchiveSoon() {
+                clearTimeout(archiveTimer);
+                archiveTimer = setTimeout(() => {
+                    if (!st.archiveMode || !st.archiveYear || !db || !st.dise) return;
+                    const y = st.archiveYear;
+                    try { localStorage.setItem(`ksrms_archive_${st.dise}_${y}`, JSON.stringify(sampleStudents)); } catch (e) {}
+                    db.collection('ksrms_schools').doc(st.dise).collection('year_archives').doc(y)
+                        .set({ students: clone(sampleStudents), updatedAt: Date.now() })
+                        .then(() => setStatus('archive', `(${y}) — ಬದಲಾವಣೆ ಆ ವರ್ಷದ ದಾಖಲೆಗೆ ಮಾತ್ರ ಸೇವ್ ಆಗಿದೆ`))
+                        .catch(() => setStatus('offline'));
+                }, 1000);
+            }
+            function setYearUI(y) {
+                const a = document.getElementById('dashAcademicYearDisplay'); if (a) a.innerText = y;
+                const b = document.getElementById('dashYearSelect'); if (b) b.value = y;
+                const c = document.getElementById('cfgAcademicYear'); if (c) c.value = y;
+            }
+            function archiveBanner(show, y) { try { archiveBannerInner(show, y); } catch (e) {} }
+            function archiveBannerInner(show, y) {
+                let b = document.getElementById('ksrmsArchiveBanner');
+                if (!show) { if (b) b.remove(); return; }
+                if (!b) {
+                    b = document.createElement('div');
+                    b.id = 'ksrmsArchiveBanner';
+                    b.style.cssText = 'position:sticky;top:0;z-index:9998;background:#084298;color:#fff;padding:8px 12px;text-align:center;font-size:13px;';
+                    document.body.insertBefore(b, document.body.firstChild);
+                }
+                b.innerHTML = `📁 ನೀವು ಹಳೆಯ ವರ್ಷ <b>${y}</b> ದಾಖಲೆ ನೋಡುತ್ತಿದ್ದೀರಿ. ಪ್ರಸ್ತುತ ವರ್ಷದ (${st.liveYear || ''}) ಅಂಕಗಳು ಸುರಕ್ಷಿತವಾಗಿವೆ. ` +
+                    `<button type="button" class="btn btn-sm btn-light ms-2" id="ksrmsBackToLive">ಪ್ರಸ್ತುತ ವರ್ಷಕ್ಕೆ ಹಿಂತಿರುಗಿ</button>`;
+                const btn = document.getElementById('ksrmsBackToLive');
+                if (btn) btn.onclick = () => updateAcademicYearGlobal(st.liveYear);
+            }
+
+            const _origPromotion = (typeof triggerPromotionProcess === 'function') ? triggerPromotionProcess : null;
+
+            updateAcademicYearGlobal = async function (newYear) {
+                if (!newYear) return;
+                if (!isSchool() || !st.dise) {
+                    if (typeof loadYearArchive === 'function' && newYear !== appSettings.academicYear) return loadYearArchive(newYear);
+                    return;
+                }
+                if (st.archiveBusy) return;
+                if (!st.ready) {
+                    alert('ಕ್ಲೌಡ್ ಡೇಟಾ ಇನ್ನೂ ಲೋಡ್ ಆಗುತ್ತಿದೆ. ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ವರ್ಷ ಬದಲಿಸಿ.');
+                    setYearUI(appSettings.academicYear);
+                    return;
+                }
+                const live = st.liveYear || appSettings.academicYear;
+
+                // ಹಳೆಯ ವರ್ಷದಿಂದ ಪ್ರಸ್ತುತ ವರ್ಷಕ್ಕೆ ಮರಳುವುದು
+                if (st.archiveMode && newYear === live) {
+                    clearTimeout(archiveTimer);
+                    const merged = apply(st.base, st.carry, st.base.O);
+                    st.archiveMode = false; st.archiveYear = null;
+                    sampleStudents = []; // owner reset
+                    setGlobalsFromModel(merged);
+                    appSettings.academicYear = live;
+                    try { currentActiveYear = live; } catch (e) {}
+                    setYearUI(live);
+                    archiveBanner(false);
+                    st.carry = null;
+                    storeNow();
+                    if (!opsEmpty(diff(localModel(), st.base))) schedulePush(300); else setStatus('saved');
+                    doRender();
+                    return;
+                }
+                if (!st.archiveMode && newYear === appSettings.academicYear) return;
+
+                // ಪ್ರಸ್ತುತ ವರ್ಷದಿಂದ (ಅಥವಾ ಒಂದು ಹಳೆಯ ವರ್ಷದಿಂದ ಇನ್ನೊಂದಕ್ಕೆ) ಹಳೆಯ ವರ್ಷಕ್ಕೆ ಹೋಗುವುದು
+                if (!st.archiveMode) {
+                    storeNow();
+                    st.carry = compose(st.carry, diff(localModel(), st.base));
+                    clearTimeout(st.pushTimer);
+                }
+                st.archiveBusy = true;
+                try {
+                    if (typeof loadYearArchive === 'function') await loadYearArchive(newYear);
+                    st.archiveMode = true;
+                    st.archiveYear = newYear;
+                    archiveBanner(true, newYear);
+                    setStatus('archive', `(${newYear})`);
+                } catch (e) {
+                    console.error('[KSRMS V5] archive load failed', e);
+                    st.archiveBusy = false;
+                    st.archiveMode = true;
+                    await updateAcademicYearGlobal(live);
+                    alert('ಆ ವರ್ಷದ ದಾಖಲೆ ತೆರೆಯಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ.');
+                    return;
+                } finally {
+                    st.archiveBusy = false;
+                }
+            };
+
+            if (_origPromotion) {
+                triggerPromotionProcess = function () {
+                    if (st.archiveMode) {
+                        alert('ಹಳೆಯ ವರ್ಷದ ದಾಖಲೆ ನೋಡುತ್ತಿರುವಾಗ ಪ್ರಮೋಷನ್ ಮಾಡಲು ಸಾಧ್ಯವಿಲ್ಲ. ಮೊದಲು ಪ್ರಸ್ತುತ ವರ್ಷಕ್ಕೆ ಹಿಂತಿರುಗಿ.');
+                        return;
+                    }
+                    if (isSchool() && !st.ready) {
+                        alert('ಕ್ಲೌಡ್ ಡೇಟಾ ಇನ್ನೂ ಲೋಡ್ ಆಗುತ್ತಿದೆ. ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಪ್ರಯತ್ನಿಸಿ.');
+                        return;
+                    }
+                    return _origPromotion.apply(this, arguments);
+                };
+            }
+
+            if (typeof purgeAllDataAndReset === 'function') {
+                const _origPurge = purgeAllDataAndReset;
+                purgeAllDataAndReset = function () {
+                    if (st.archiveMode) { alert('ಮೊದಲು ಪ್ರಸ್ತುತ ವರ್ಷಕ್ಕೆ ಹಿಂತಿರುಗಿ.'); return; }
+                    st.massOk = true;
+                    const r = _origPurge.apply(this, arguments);
+                    setTimeout(() => { if (!st.pushing) st.massOk = false; }, 5000);
+                    return r;
+                };
+            }
+
+            // ---------------- ಪೇಜ್ ಮುಚ್ಚುವಾಗ / ನೆಟ್ ಮರಳಿದಾಗ ----------------
+            const flush = () => { if (st.dise && isSchool() && !st.archiveMode) { storeNow(); if (canPush()) push(); } };
+            window.addEventListener('pagehide', flush);
+            window.addEventListener('beforeunload', flush);
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+            window.addEventListener('online', () => schedulePush(500));
+            window.addEventListener('offline', () => { if (isSchool()) setStatus('offline'); });
+
+            // ಈಗಾಗಲೇ ಬೂಟ್ ಆಗಿದ್ದರೆ (ಹಳೆಯ ಲಿಸನರ್ ಚಾಲನೆಯಲ್ಲಿದ್ದರೆ) ಹೊಸ ಎಂಜಿನ್‌ಗೆ ಬದಲಿಸಿ
+            setTimeout(() => {
+                const d = ksrmsGetActiveDise();
+                if (d && isSchool() && st.dise !== d) {
+                    loadSchoolDataFromStorage(d);
+                    subscribeToSchoolCloudData(d);
+                }
+            }, 400);
+
+            console.log('[KSRMS V5] Safe merge sync engine active.');
+        })();
+
     </script>
 </body>
 </html>
