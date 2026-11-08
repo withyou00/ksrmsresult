@@ -27694,7 +27694,7 @@ function injectBulkStudentEditModalHTML() {
             // ---------------- ಕ್ಲೌಡ್‌ಗೆ ಸುರಕ್ಷಿತ ಪುಶ್ (Transaction) ----------------
             function canPush() {
                 return !!(db && st.dise && st.ready && !st.archiveMode && !st.archiveBusy && isSchool() &&
-                          ksrmsGetActiveDise() === st.dise && !isRestoring());
+                          ksrmsGetActiveDise() === st.dise && !isRestoring() && !window.ksrmsAuthBusy);
             }
             function schedulePush(delay) {
                 clearTimeout(st.pushTimer);
@@ -27777,12 +27777,15 @@ function injectBulkStudentEditModalHTML() {
                     }
                     const extra = st.lastBytes > WARN_DOC_BYTES ? `<br><small>⚠️ ಶಾಲೆಯ ಡೇಟಾ ಗಾತ್ರ ${(st.lastBytes / 1048576 * 100).toFixed(0)}% ತಲುಪಿದೆ — ಹಳೆಯ/ಬೇಡದ ದಾಖಲೆಗಳನ್ನು ತೆಗೆಯಿರಿ.</small>` : '';
                     setStatus('saved', extra);
+                    setTimeout(maybeDailyBackup, 3000);
                 } catch (err) {
                     console.error('[KSRMS V5] cloud save failed', err);
                     if (err && err.code === 'ksrms/too-big') {
                         setStatus('error', `<br><small>ಶಾಲೆಯ ಒಟ್ಟು ಡೇಟಾ ಕ್ಲೌಡ್ ಮಿತಿ (1 MB) ಮೀರಿದೆ. ಅಂಕಗಳು ಈ ಸಾಧನದಲ್ಲಿ ಮಾತ್ರ ಇವೆ. Backup ಡೌನ್‌ಲೋಡ್ ಮಾಡಿ ಮತ್ತು Admin ಸಂಪರ್ಕಿಸಿ.</small>`);
                     } else if (err && (err.code === 'permission-denied')) {
-                        setStatus('error', '<br><small>ಅನುಮತಿ ಇಲ್ಲ (permission-denied). ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ.</small>');
+                        setStatus('error', '<br><small>ಅನುಮತಿ ಇಲ್ಲ — ದಯವಿಟ್ಟು Logout ಮಾಡಿ ಮತ್ತೆ DISE Code ಮತ್ತು Secret Key ಹಾಕಿ ಲಾಗಿನ್ ಆಗಿ. ಅಂಕಗಳು ಈ ಸಾಧನದಲ್ಲಿ ಸುರಕ್ಷಿತ.</small>');
+                        clearTimeout(st.retryTimer);
+                        st.retryTimer = setTimeout(() => schedulePush(0), 60000);
                     } else {
                         setStatus('offline');
                         clearTimeout(st.retryTimer);
@@ -27857,6 +27860,7 @@ function injectBulkStudentEditModalHTML() {
                 if (!opsEmpty(diff(localModel(), st.base))) schedulePush(300);
                 else setStatus('saved');
                 if (needRender) render();
+                setTimeout(maybeDailyBackup, 5000);
                 if (recovered > 0) toast(`✅ ಈ ಸಾಧನದಲ್ಲಿ ಮಾತ್ರ ಉಳಿದಿದ್ದ ${recovered} ಅಂಕಗಳನ್ನು ಮರುಪಡೆದು ಕ್ಲೌಡ್‌ಗೆ ಸೇರಿಸಲಾಗಿದೆ.`);
             }
 
@@ -27902,7 +27906,7 @@ function injectBulkStudentEditModalHTML() {
                 firestoreUnsubscribe = db.collection('ksrms_schools').doc(dise).onSnapshot(
                     { includeMetadataChanges: true },
                     doc => { try { onCloud(doc, dise); } catch (e) { console.error('[KSRMS V5] listener', e); } },
-                    err => { console.error('[KSRMS V5] Subscription Error:', err); setStatus('offline'); }
+                    err => { console.error('[KSRMS V5] Subscription Error:', err); if (err && err.code === 'permission-denied') setStatus('error', '<br><small>ಅನುಮತಿ ಇಲ್ಲ — Logout ಮಾಡಿ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ.</small>'); else setStatus('offline'); }
                 );
             };
 
@@ -28043,7 +28047,493 @@ function injectBulkStudentEditModalHTML() {
                 }
             }, 400);
 
+
+            // ======================================================================
+            // ಸ್ವಯಂಚಾಲಿತ ದೈನಂದಿನ ಬ್ಯಾಕಪ್ (ವಾರದ 7 ದಿನಗಳಿಗೆ 7 ಸ್ಲಾಟ್ — ಕೊನೆಯ 7 ದಿನಗಳ ಪ್ರತಿ ಯಾವಾಗಲೂ ಇರುತ್ತದೆ)
+            // ======================================================================
+            const pad2 = n => String(n).padStart(2, '0');
+            const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+            const backupsCol = dise => db.collection('ksrms_schools').doc(dise).collection('daily_backups');
+            let backupBusy = false;
+
+            function countMarks(students) {
+                let n = 0;
+                const walk = v => {
+                    if (isObj(v)) Object.keys(v).forEach(k => walk(v[k]));
+                    else if (v !== '' && v !== null && v !== undefined) n++;
+                };
+                (students || []).forEach(s => { if (s) { walk(s.marks); walk(s.hsMarks); } });
+                return n;
+            }
+
+            function backupPayload(model, label) {
+                const students = model.O.map(id => model.S[id]).filter(isObj);
+                return {
+                    date: todayStr(),
+                    label: label || 'auto',
+                    createdAt: Date.now(),
+                    academicYear: (model.A && model.A.academicYear) || '',
+                    studentCount: students.length,
+                    marksCount: countMarks(students),
+                    students: students,
+                    appSettings: model.A || {},
+                    classTeachersMap: model.T || {},
+                    subjectMasterList: model.L || []
+                };
+            }
+
+            async function maybeDailyBackup() {
+                try {
+                    if (backupBusy || !db || !st.ready || st.archiveMode || !isSchool() || window.ksrmsAuthBusy) return;
+                    const dise = st.dise;
+                    const base = st.base;
+                    if (!dise || !base || !base.O.length) return;
+                    const today = todayStr();
+                    const lsKey = 'ksrms_v5_lastbackup_' + dise;
+                    let last = null; try { last = localStorage.getItem(lsKey); } catch (e) {}
+                    if (last === today) return;
+                    backupBusy = true;
+                    const ref = backupsCol(dise).doc('day' + new Date().getDay());
+                    const snap = await ref.get();
+                    if (!(snap.exists && snap.data() && snap.data().date === today)) {
+                        const payload = backupPayload(base, 'auto');
+                        if (bytesOf(payload) > MAX_DOC_BYTES) { backupBusy = false; return; }
+                        await ref.set(payload);
+                        console.log('[KSRMS V5] Daily backup saved', today);
+                    }
+                    try { localStorage.setItem(lsKey, today); } catch (e) {}
+                } catch (e) {
+                    console.warn('[KSRMS V5] daily backup skipped', e && e.code);
+                } finally {
+                    backupBusy = false;
+                }
+            }
+
+            function closeBackupModal() { const m = document.getElementById('ksrmsDailyBackupModal'); if (m) m.remove(); }
+
+            async function openDailyBackups() {
+                if (!isSchool() || !st.dise) { alert('ಶಾಲೆಯ DISE Code ಮತ್ತು Secret Key ನಿಂದ ಲಾಗಿನ್ ಆದ ನಂತರ ಮಾತ್ರ ಇದು ಲಭ್ಯ.'); return; }
+                if (!db) { alert('ಇಂಟರ್ನೆಟ್ / ಕ್ಲೌಡ್ ಸಂಪರ್ಕ ಇಲ್ಲ.'); return; }
+                if (st.archiveMode) { alert('ಮೊದಲು ಪ್ರಸ್ತುತ ವರ್ಷಕ್ಕೆ ಹಿಂತಿರುಗಿ.'); return; }
+                closeBackupModal();
+                const wrap = document.createElement('div');
+                wrap.id = 'ksrmsDailyBackupModal';
+                wrap.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;';
+                wrap.innerHTML = `<div style="background:#fff;border-radius:10px;max-width:560px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.35);">
+                    <div style="background:#0d6efd;color:#fff;padding:12px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center;">
+                        <span>☁️ ದೈನಂದಿನ ಸ್ವಯಂಚಾಲಿತ ಬ್ಯಾಕಪ್‌ಗಳು (ಕೊನೆಯ 7 ದಿನ)</span>
+                        <button type="button" id="ksrmsBkClose" style="background:none;border:0;color:#fff;font-size:22px;line-height:1;cursor:pointer;">×</button>
+                    </div>
+                    <div id="ksrmsBkBody" style="padding:14px 16px;font-size:14px;">⏳ ಲೋಡ್ ಆಗುತ್ತಿದೆ...</div>
+                </div>`;
+                document.body.appendChild(wrap);
+                wrap.addEventListener('click', e => { if (e.target === wrap) closeBackupModal(); });
+                document.getElementById('ksrmsBkClose').onclick = closeBackupModal;
+                const body = document.getElementById('ksrmsBkBody');
+                try {
+                    const qs = await backupsCol(st.dise).get();
+                    const list = [];
+                    qs.forEach(d => { const x = d.data() || {}; list.push({ id: d.id, date: x.date || '', createdAt: x.createdAt || 0, label: x.label || 'auto', studentCount: x.studentCount || 0, marksCount: x.marksCount || 0, academicYear: x.academicYear || '' }); });
+                    list.sort((a, b) => b.createdAt - a.createdAt);
+                    const curCount = sampleStudents.length, curMarks = countMarks(sampleStudents);
+                    let html = `<div style="background:#f1f5f9;border-radius:6px;padding:8px 10px;margin-bottom:10px;">ಈಗಿನ ಡೇಟಾ: <b>${curCount}</b> ಮಕ್ಕಳು, <b>${curMarks}</b> ಅಂಕಗಳು</div>`;
+                    if (!list.length) html += '<div style="color:#6c757d;">ಇನ್ನೂ ಯಾವುದೇ ಬ್ಯಾಕಪ್ ಇಲ್ಲ. ಪ್ರತಿದಿನ ಮೊದಲ ಬಾರಿ ವೆಬ್‌ಸೈಟ್ ತೆರೆದಾಗ ಬ್ಯಾಕಪ್ ತಾನಾಗಿಯೇ ಆಗುತ್ತದೆ.</div>';
+                    list.forEach(b => {
+                        const when = b.createdAt ? new Date(b.createdAt).toLocaleString('en-GB') : b.date;
+                        const tag = b.label === 'before_restore' ? ' <span style="background:#ffc107;border-radius:4px;padding:0 6px;font-size:11px;">ಮರುಸ್ಥಾಪನೆಗೆ ಮುಂಚಿನ ಪ್ರತಿ</span>' : '';
+                        html += `<div style="border:1px solid #dee2e6;border-radius:8px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+                            <div><div style="font-weight:700;">📅 ${when}${tag}</div>
+                            <div style="color:#495057;font-size:13px;">${b.studentCount} ಮಕ್ಕಳು · ${b.marksCount} ಅಂಕಗಳು${b.academicYear ? ' · ' + b.academicYear : ''}</div></div>
+                            <button type="button" class="btn btn-sm btn-outline-danger fw-bold" data-bk="${b.id}">ಈ ದಿನಕ್ಕೆ ಮರುಸ್ಥಾಪಿಸಿ</button></div>`;
+                    });
+                    html += '<div style="color:#6c757d;font-size:12px;margin-top:6px;">ಮರುಸ್ಥಾಪಿಸುವ ಮೊದಲು ಈಗಿನ ಡೇಟಾದ ಪ್ರತಿಯನ್ನು ತಾನಾಗಿಯೇ ಉಳಿಸಲಾಗುತ್ತದೆ, ಆದ್ದರಿಂದ ತಪ್ಪಾಗಿ ಒತ್ತಿದರೂ ಮತ್ತೆ ಹಿಂದಿರುಗಿಸಬಹುದು.</div>';
+                    body.innerHTML = html;
+                    body.querySelectorAll('button[data-bk]').forEach(btn => { btn.onclick = () => restoreDailyBackup(btn.getAttribute('data-bk')); });
+                } catch (e) {
+                    body.innerHTML = `<div style="color:#842029;">ಬ್ಯಾಕಪ್‌ಗಳನ್ನು ತೆರೆಯಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ (${(e && e.code) || 'error'}). ಇಂಟರ್ನೆಟ್ ಪರಿಶೀಲಿಸಿ ಅಥವಾ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ.</div>`;
+                }
+            }
+
+            async function restoreDailyBackup(slotId) {
+                if (!st.ready) { alert('ಕ್ಲೌಡ್ ಡೇಟಾ ಇನ್ನೂ ಲೋಡ್ ಆಗುತ್ತಿದೆ. ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಪ್ರಯತ್ನಿಸಿ.'); return; }
+                try {
+                    const snap = await backupsCol(st.dise).doc(slotId).get();
+                    if (!snap.exists) { alert('ಈ ಬ್ಯಾಕಪ್ ದೊರೆಯಲಿಲ್ಲ.'); return; }
+                    const b = snap.data();
+                    const when = b.createdAt ? new Date(b.createdAt).toLocaleString('en-GB') : b.date;
+                    if (!confirm(`ಖಚಿತವಾಗಿ ${when} ದಿನದ ಬ್ಯಾಕಪ್‌ಗೆ ಮರುಸ್ಥಾಪಿಸಬೇಕೇ?\n\n• ${b.studentCount || 0} ಮಕ್ಕಳು, ${b.marksCount || 0} ಅಂಕಗಳು\n• ಆ ದಿನದ ನಂತರ ಹಾಕಿದ ಅಂಕಗಳು ತೆಗೆದುಹೋಗುತ್ತವೆ\n• ಈಗಿನ ಡೇಟಾದ ಪ್ರತಿಯನ್ನು ಮೊದಲು ಉಳಿಸಲಾಗುತ್ತದೆ`)) return;
+                    // ಈಗಿನ ಡೇಟಾದ ಪ್ರತಿ ಮೊದಲು ಉಳಿಸಿ
+                    const cur = localModel();
+                    if (cur.O.length) {
+                        const pre = backupPayload(cur, 'before_restore');
+                        if (bytesOf(pre) <= MAX_DOC_BYTES) await backupsCol(st.dise).doc('before_restore').set(pre);
+                    }
+                    const m = toModel(b.students || [], b.appSettings || appSettings, b.classTeachersMap || classTeachersMap, b.subjectMasterList || subjectMasterList);
+                    st.massOk = true;
+                    sampleStudents = [];
+                    setGlobalsFromModel(m);
+                    if (b.appSettings) appSettings = Object.assign({}, appSettings, b.appSettings);
+                    storeNow();
+                    closeBackupModal();
+                    doRender();
+                    await push();
+                    toast(`✅ ${when} ದಿನದ ಬ್ಯಾಕಪ್ ಮರುಸ್ಥಾಪಿಸಲಾಗಿದೆ (${m.O.length} ಮಕ್ಕಳು).`);
+                } catch (e) {
+                    console.error('[KSRMS V5] restore failed', e);
+                    alert('ಮರುಸ್ಥಾಪನೆ ವಿಫಲವಾಗಿದೆ: ' + ((e && e.code) || e));
+                }
+            }
+            window.ksrmsOpenDailyBackups = openDailyBackups;
+
+            // ಸೆಟ್ಟಿಂಗ್ಸ್‌ನ "Backup & Restore" ಕಾರ್ಡ್‌ನಲ್ಲಿ ಬಟನ್ ಸೇರಿಸುವುದು
+            function injectBackupButton() {
+                try {
+                    if (document.getElementById('ksrmsDailyBackupBtn')) return;
+                    const fileInput = document.getElementById('backupFileInput');
+                    if (!fileInput || !fileInput.parentElement) return;
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.id = 'ksrmsDailyBackupBtn';
+                    btn.className = 'btn btn-primary fw-bold btn-sm py-2 shadow-sm';
+                    btn.innerHTML = '☁️ ದೈನಂದಿನ ಬ್ಯಾಕಪ್‌ಗಳು (7 ದಿನ)';
+                    btn.onclick = openDailyBackups;
+                    fileInput.parentElement.appendChild(btn);
+                } catch (e) {}
+            }
+            setInterval(injectBackupButton, 3000);
+
+            window.ksrmsV5 = { kick: () => schedulePush(0), backupNow: maybeDailyBackup, state: st };
+
             console.log('[KSRMS V5] Safe merge sync engine active.');
+        })();
+
+
+        // ======================================================================
+        // KSRMS V6.0 — ಪ್ರತಿ ಶಾಲೆಗೆ ಸುರಕ್ಷಿತ Firebase ಲಾಗಿನ್ (SECURE SCHOOL LOGIN)
+        // ----------------------------------------------------------------------
+        // • ಶಾಲೆ ಲಾಗಿನ್ ಆದಾಗ Firebase Anonymous ಖಾತೆ + "ksrms_sessions/{uid}" ದಾಖಲೆ ರಚನೆ.
+        //   ಆ ದಾಖಲೆಯಲ್ಲಿರುವ Secret Key ಸರಿಯಾಗಿದೆಯೇ ಎಂದು Firebase Rules ನೇ
+        //   "ksrms_secrets/{dise}" (ಯಾರಿಗೂ ಓದಲು ಸಾಧ್ಯವಿಲ್ಲದ) ದಾಖಲೆಯೊಂದಿಗೆ ಹೋಲಿಸುತ್ತದೆ.
+        // • ಹೀಗಾಗಿ Secret Key ಗಳು browser ಗೆ ಬರುವುದಿಲ್ಲ, ಮತ್ತು ಒಂದು ಶಾಲೆ ತನ್ನ ಡೇಟಾ ಮಾತ್ರ ಮುಟ್ಟಬಹುದು.
+        // • Admin ಲಾಗಿನ್ ಆದಾಗ ಎಲ್ಲಾ ಲೈಸೆನ್ಸ್‌ಗಳ Secret Key ಗಳು ksrms_secrets ಗೆ ತಾನಾಗಿಯೇ ಸಿಂಕ್ ಆಗುತ್ತವೆ.
+        // • ಈಗಾಗಲೇ ಲಾಗಿನ್ ಆಗಿರುವ ಸಾಧನಗಳು (ಹಂತ-1 rules ಇರುವಾಗ) ತಾನಾಗಿಯೇ ಹೊಸ ವ್ಯವಸ್ಥೆಗೆ ಬರುತ್ತವೆ.
+        // ======================================================================
+        (function KSRMS_SecureLoginV6() {
+            if (typeof firebase === 'undefined' || !firebase.auth || !db) {
+                console.warn('[KSRMS V6] Firebase Auth not available — secure login disabled.');
+                return;
+            }
+            const auth = firebase.auth();
+            const norm = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            let anonUnavailable = false;
+
+            const authStateReady = new Promise(resolve => {
+                let done = false;
+                const un = auth.onAuthStateChanged(u => { if (!done) { done = true; try { un(); } catch (e) {} resolve(u); } });
+                setTimeout(() => { if (!done) { done = true; resolve(auth.currentUser); } }, 8000);
+            });
+
+            function readStoredSession() {
+                try {
+                    const s = localStorage.getItem('ksrms_active_session') || sessionStorage.getItem('ksrms_active_session');
+                    return s ? JSON.parse(s) : null;
+                } catch (e) { return null; }
+            }
+
+            async function ensureAnon() {
+                await authStateReady;
+                let u = auth.currentUser;
+                if (u && u.isAnonymous) return u;
+                const cred = await auth.signInAnonymously();
+                return cred.user;
+            }
+
+            async function sessionOk(uid, dise) {
+                try {
+                    const s = await db.collection('ksrms_sessions').doc(uid).get();
+                    return s.exists && String(s.data().dise) === String(dise);
+                } catch (e) { return false; }
+            }
+
+            async function createSession(uid, dise, keyNorm) {
+                const ref = db.collection('ksrms_sessions').doc(uid);
+                try { await ref.delete(); } catch (e) {}
+                await ref.set({ dise: String(dise), key: String(keyNorm), createdAt: Date.now() });
+            }
+
+            const isAnonDisabledError = e => !!(e && /operation-not-allowed|admin-restricted-operation/.test(String(e.code || e.message || '')));
+
+            // ---------------- ಹೊಸ ಶಾಲಾ ಲಾಗಿನ್ ----------------
+            const _legacyLogin = performSchoolLogin;
+
+            performSchoolLogin = async function () {
+                const diseEl = document.getElementById('loginDiseCode');
+                const keyEl = document.getElementById('loginSecretKey');
+                const dise = diseEl ? diseEl.value.trim() : '';
+                const rawKey = keyEl ? keyEl.value.trim() : '';
+                if (!dise || !rawKey) return alert('ದಯವಿಟ್ಟು ಶಾಲೆಯ DISE Code ಮತ್ತು Secret Key ಎರಡನ್ನೂ ನಮೂದಿಸಿ!');
+
+                if (anonUnavailable) return _legacyLogin();
+
+                const keyNorm = norm(rawKey);
+                window.ksrmsAuthBusy = true;
+                let licData = null, licReadable = false, secured = false, user = null;
+                try {
+                    try {
+                        user = await ensureAnon();
+                    } catch (e) {
+                        if (isAnonDisabledError(e)) {
+                            anonUnavailable = true;
+                            console.warn('[KSRMS V6] Anonymous sign-in is disabled in Firebase Console — using legacy login.');
+                            window.ksrmsAuthBusy = false;
+                            return _legacyLogin();
+                        }
+                        throw e;
+                    }
+
+                    // 1) Firebase Rules ಮೂಲಕ Secret Key ಪರಿಶೀಲನೆ
+                    try { await createSession(user.uid, dise, keyNorm); secured = true; } catch (e) { secured = false; }
+
+                    // 2) ಲೈಸೆನ್ಸ್ ವಿವರ ಓದಿ (ಹಂತ-2 rules ನಲ್ಲಿ ಸ್ವಂತ ಶಾಲೆಯದ್ದು ಮಾತ್ರ ಓದಬಹುದು)
+                    try {
+                        const d = await db.collection('ksrms_licenses').doc(dise).get();
+                        licReadable = true;
+                        if (d.exists) licData = d.data();
+                    } catch (e) { licReadable = false; }
+
+                    if (!secured) {
+                        // ಪರಿವರ್ತನೆಯ ಅವಧಿ (ಹಂತ-1): ಹಳೆಯ ರೀತಿಯಲ್ಲಿ ಪರಿಶೀಲಿಸಿ, ನಂತರ ಪೂರ್ಣ Key ನಿಂದ ಸೆಷನ್ ರಚಿಸಿ
+                        if (!licData) {
+                            alert(licReadable
+                                ? `DISE Code (${dise}) ಗೆ ಯಾವುದೇ ನೋಂದಾಯಿತ Secret Key ದೊರೆತಿಲ್ಲ.`
+                                : 'DISE Code ಅಥವಾ Secret Key ಸರಿಯಾಗಿಲ್ಲ! (ಪೂರ್ಣ Secret Key ಅನ್ನು ನಮೂದಿಸಿ)');
+                            return;
+                        }
+                        const stored = norm(licData.secretKey);
+                        if (!stored || (keyNorm !== stored && !stored.endsWith(keyNorm))) {
+                            alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ!');
+                            return;
+                        }
+                        try { await createSession(user.uid, dise, stored); secured = true; }
+                        catch (e) { console.warn('[KSRMS V6] secure session not yet available for', dise, '(admin has not synced secrets yet)'); }
+                    }
+
+                    const rec = licData || { diseCode: dise, schoolName: dise, mobile: '' };
+
+                    currentSession = {
+                        isLoggedIn: true,
+                        role: 'school',
+                        diseCode: String(rec.diseCode || dise).trim(),
+                        schoolName: rec.schoolName || dise,
+                        mobile: rec.mobile || ''
+                    };
+                    try {
+                        localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession));
+                        sessionStorage.setItem('ksrms_active_session', JSON.stringify(currentSession));
+                    } catch (e) {}
+
+                    appSettings.diseCode = currentSession.diseCode;
+                    appSettings.schoolName = currentSession.schoolName;
+
+                    try { loginModalInstance.hide(); } catch (e) {}
+                    try { updateSessionUI(); } catch (e) {}
+
+                    window.ksrmsAuthBusy = false;
+                    const loaded = loadSchoolDataFromStorage(currentSession.diseCode);
+                    if (!loaded) sampleStudents = [];
+                    try { onClassChangeHandle(); } catch (e) {}
+                    subscribeToSchoolCloudData(currentSession.diseCode);
+
+                    alert(`ಲಾಗಿನ್ ಯಶಸ್ವಿಯಾಗಿದೆ!${secured ? ' 🔐' : ''}\n\nಶಾಲೆ: ${currentSession.schoolName}\nಒಟ್ಟು ಮಕ್ಕಳು: ${sampleStudents.length}`);
+                } catch (err) {
+                    console.error('[KSRMS V6] login error', err);
+                    alert('ಲಾಗಿನ್ ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಇಂಟರ್ನೆಟ್ ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.');
+                } finally {
+                    window.ksrmsAuthBusy = false;
+                }
+            };
+
+            // ---------------- ಬೂಟ್: ಈಗಾಗಲೇ ಲಾಗಿನ್ ಆಗಿರುವ ಸಾಧನವನ್ನು ಸುರಕ್ಷಿತ ಸೆಷನ್‌ಗೆ ತರುವುದು ----------------
+            const _v5Subscribe = subscribeToSchoolCloudData;
+            let pendingSub = null;
+            subscribeToSchoolCloudData = function (diseCode) {
+                if (window.ksrmsAuthBusy) {
+                    pendingSub = diseCode;
+                    try { loadSchoolDataFromStorage(diseCode); onClassChangeHandle(); } catch (e) {}
+                    return;
+                }
+                return _v5Subscribe(diseCode);
+            };
+
+            async function bootSecure(dise, schoolName) {
+                try {
+                    await authStateReady;
+                    let u = auth.currentUser;
+                    if (u && u.isAnonymous && await sessionOk(u.uid, dise)) return;
+                    try { u = await ensureAnon(); }
+                    catch (e) { if (isAnonDisabledError(e)) anonUnavailable = true; return; }
+
+                    // ಹಂತ-1: ಲೈಸೆನ್ಸ್ ಓದಲು ಸಾಧ್ಯವಿದ್ದರೆ ಶಿಕ್ಷಕರಿಗೆ ತಿಳಿಯದಂತೆ ಸೆಷನ್ ರಚಿಸಿ
+                    let stored = null, licReadable = false;
+                    try {
+                        const d = await db.collection('ksrms_licenses').doc(dise).get();
+                        licReadable = true;
+                        if (d.exists) stored = norm(d.data().secretKey);
+                    } catch (e) {}
+                    if (stored) {
+                        try { await createSession(u.uid, dise, stored); console.log('[KSRMS V6] secure session ready'); } catch (e) {}
+                        return;
+                    }
+                    if (licReadable) return; // ಹಂತ-1 rules, ಲೈಸೆನ್ಸ್ ಇಲ್ಲ → ಹಳೆಯಂತೆ ಮುಂದುವರಿಯಿರಿ
+
+                    // ಹಂತ-2: Secret Key ಅನ್ನು ಒಮ್ಮೆ ಮತ್ತೆ ಕೇಳಿ
+                    for (let i = 0; i < 3; i++) {
+                        const k = prompt(`🔐 ಸುರಕ್ಷತಾ ಅಪ್‌ಡೇಟ್\n\n"${schoolName || dise}" ಶಾಲೆಯ ಅಂಕಗಳನ್ನು ಸೇವ್ ಮಾಡಲು, ದಯವಿಟ್ಟು ನಿಮ್ಮ ಶಾಲೆಯ ಪೂರ್ಣ Secret Key ಅನ್ನು ಒಮ್ಮೆ ಮತ್ತೆ ನಮೂದಿಸಿ:`);
+                        if (k === null) break;
+                        try { await createSession(u.uid, dise, norm(k)); toast6('✅ ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಸಕ್ರಿಯವಾಗಿದೆ.'); return; }
+                        catch (e) { alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ. ಪೂರ್ಣ Key ಅನ್ನು ಸರಿಯಾಗಿ ನಮೂದಿಸಿ.'); }
+                    }
+                    toast6('⚠️ Secret Key ನಮೂದಿಸದ ಕಾರಣ ಅಂಕಗಳು ಈ ಸಾಧನದಲ್ಲಿ ಮಾತ್ರ ಉಳಿಯುತ್ತವೆ. Logout ಮಾಡಿ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ.');
+                } catch (e) {
+                    console.warn('[KSRMS V6] boot secure check failed', e);
+                }
+            }
+
+            (function startBoot() {
+                const s = readStoredSession();
+                if (!(s && s.isLoggedIn && s.role === 'school' && s.diseCode && s.diseCode !== 'ALL')) return;
+                const dise = String(s.diseCode).trim();
+                window.ksrmsAuthBusy = true;
+                bootSecure(dise, s.schoolName).finally(() => {
+                    window.ksrmsAuthBusy = false;
+                    const cur = (typeof ksrmsGetActiveDise === 'function') ? ksrmsGetActiveDise() : null;
+                    if (cur) {
+                        subscribeToSchoolCloudData(pendingSub || cur);
+                        try { saveAndSyncAllData(false); } catch (e) {}
+                    }
+                    pendingSub = null;
+                });
+            })();
+
+            // ---------------- Logout: ಸೆಷನ್ ಅಳಿಸಿ ----------------
+            if (typeof performSchoolLogout === 'function') {
+                const _logout = performSchoolLogout;
+                performSchoolLogout = function () {
+                    const wasSchool = currentSession && currentSession.role === 'school';
+                    const r = _logout.apply(this, arguments);
+                    if (wasSchool && !(currentSession && currentSession.role === 'school')) {
+                        const u = auth.currentUser;
+                        // ಸೆಷನ್ ದಾಖಲೆ ಅಳಿಸುವುದಿಲ್ಲ (Admin ಗೆ "ಹೊಸ ಲಾಗಿನ್ ಬಳಸಿದ ಶಾಲೆಗಳು" ಎಣಿಕೆಗೆ ಬೇಕು).
+                        // Sign out ಆದ ನಂತರ ಆ anonymous ಖಾತೆ ಮತ್ತೆ ಯಾರಿಗೂ ಸಿಗುವುದಿಲ್ಲ, ಆದ್ದರಿಂದ ಸುರಕ್ಷಿತ.
+                        if (u && u.isAnonymous) { auth.signOut().catch(() => {}); }
+                    }
+                    return r;
+                };
+            }
+
+            // ---------------- "Secret Key ಮರೆತಿದೆ" — Key ಓದಲು ಸಾಧ್ಯವಿಲ್ಲದಿದ್ದಾಗ Admin ಸಂಪರ್ಕ ----------------
+            if (typeof retrieveExistingSecretKey === 'function') {
+                const _forgot = retrieveExistingSecretKey;
+                retrieveExistingSecretKey = async function () {
+                    const dise = (document.getElementById('fgDiseCode') || {}).value || '';
+                    const mob = (document.getElementById('fgMobile') || {}).value || '';
+                    try {
+                        await db.collection('ksrms_licenses').doc(dise.trim() || '_').get();
+                        return _forgot.apply(this, arguments);
+                    } catch (e) {
+                        const box = document.getElementById('forgotKeyResult');
+                        if (!dise.trim() || !mob.trim()) return alert('ದಯವಿಟ್ಟು DISE Code ಮತ್ತು ನೋಂದಾಯಿತ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ಎರಡನ್ನೂ ನಮೂದಿಸಿ!');
+                        const msg = `ನಮಸ್ಕಾರ KSRMS Admin,\n\nನನ್ನ ಶಾಲೆಯ Secret Key ಮರೆತುಹೋಗಿದೆ. ದಯವಿಟ್ಟು ಕಳುಹಿಸಿ.\n\nDISE Code: ${dise.trim()}\nನೋಂದಾಯಿತ ಮೊಬೈಲ್: ${mob.trim()}`;
+                        if (box) box.innerHTML = `<div class="alert alert-info border border-info p-3 text-center mb-0">
+                            <div class="fw-bold mb-2">🔐 ಸುರಕ್ಷತೆಯ ಕಾರಣಕ್ಕೆ Secret Key ಅನ್ನು ಇಲ್ಲಿ ತೋರಿಸಲಾಗುವುದಿಲ್ಲ.</div>
+                            <a href="https://api.whatsapp.com/send?phone=919902090911&text=${encodeURIComponent(msg)}" target="_blank" class="btn btn-sm btn-success fw-bold">WhatsApp ಮೂಲಕ Admin ನಿಂದ Key ಪಡೆಯಿರಿ</a></div>`;
+                    }
+                };
+            }
+
+            // ---------------- Admin: Secret Key ಗಳನ್ನು ksrms_secrets ಗೆ ಸಿಂಕ್ ----------------
+            let syncTimer = null, syncing = false;
+            let deniedRetries = 0;
+            async function syncSecrets(showResult) {
+                if (syncing) return;
+                const u = auth.currentUser;
+                if (!u || u.isAnonymous || !currentSession || currentSession.role !== 'admin') return;
+                syncing = true;
+                try {
+                    const [licSnap, secSnap] = await Promise.all([
+                        db.collection('ksrms_licenses').get(),
+                        db.collection('ksrms_secrets').get()
+                    ]);
+                    const secMap = {};
+                    secSnap.forEach(d => { secMap[d.id] = (d.data() || {}).keyNorm; });
+                    const ops = [];
+                    const licIds = new Set();
+                    licSnap.forEach(d => {
+                        licIds.add(d.id);
+                        const kn = norm((d.data() || {}).secretKey);
+                        if (kn && secMap[d.id] !== kn) ops.push({ t: 'set', id: d.id, kn });
+                    });
+                    Object.keys(secMap).forEach(id => { if (!licIds.has(id)) ops.push({ t: 'del', id }); });
+                    for (let i = 0; i < ops.length; i += 400) {
+                        const b = db.batch();
+                        ops.slice(i, i + 400).forEach(o => {
+                            const ref = db.collection('ksrms_secrets').doc(o.id);
+                            if (o.t === 'set') b.set(ref, { keyNorm: o.kn, updatedAt: Date.now() });
+                            else b.delete(ref);
+                        });
+                        await b.commit();
+                    }
+                    let migrated = 0;
+                    try {
+                        const ss = await db.collection('ksrms_sessions').get();
+                        const ds = new Set();
+                        ss.forEach(d => { const x = d.data() || {}; if (x.dise) ds.add(String(x.dise)); });
+                        licIds.forEach(id => { if (ds.has(id)) migrated++; });
+                    } catch (e) {}
+                    deniedRetries = 0;
+                    window.ksrmsSecureStatus = { schools: licIds.size, migrated, updated: ops.length };
+                    if (showResult || ops.length) toast6(`🔐 ಸುರಕ್ಷಿತ ಲಾಗಿನ್: ${licIds.size} ಶಾಲೆಗಳ Key ಸಿದ್ಧ · ${migrated} ಶಾಲೆಗಳು ಹೊಸ ಲಾಗಿನ್ ಬಳಸುತ್ತಿವೆ`);
+                    console.log('[KSRMS V6] secrets synced', window.ksrmsSecureStatus);
+                } catch (e) {
+                    console.warn('[KSRMS V6] secret sync failed', e && e.code);
+                    if (e && e.code === 'permission-denied' && deniedRetries < 2) {
+                        // ಲಾಗಿನ್ ಆದ ತಕ್ಷಣ Firebase ಗೆ ಹೊಸ Admin ಗುರುತು ತಲುಪಲು ಕೆಲವು ಸೆಕೆಂಡು ಬೇಕು → ಮೌನವಾಗಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ
+                        deniedRetries++;
+                        setTimeout(() => syncSecrets(showResult), 4000);
+                    } else if (e && e.code === 'permission-denied') toast6('⚠️ ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಸಿಂಕ್ ಆಗಲಿಲ್ಲ: Firebase Rules (ಹಂತ-1) ಇನ್ನೂ Publish ಆಗಿಲ್ಲ ಅಥವಾ Admin ಇಮೇಲ್ ಹೊಂದುತ್ತಿಲ್ಲ.');
+                } finally {
+                    syncing = false;
+                }
+            }
+            let wantShow = false;
+            function syncSoon(show) {
+                wantShow = wantShow || !!show;
+                clearTimeout(syncTimer);
+                syncTimer = setTimeout(() => { const sh = wantShow; wantShow = false; syncSecrets(sh); }, 2500);
+            }
+
+            auth.onAuthStateChanged(u => { if (u && !u.isAnonymous) syncSoon(true); });
+            if (typeof renderAdminKeysTable === 'function') {
+                const _render = renderAdminKeysTable;
+                renderAdminKeysTable = function () {
+                    const r = _render.apply(this, arguments);
+                    syncSoon(false);
+                    return r;
+                };
+            }
+            window.ksrmsSyncSecretsNow = () => syncSecrets(true);
+
+            function toast6(msg) {
+                try {
+                    const t = document.createElement('div');
+                    t.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:100002;background:#212529;color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:92vw;';
+                    t.textContent = msg;
+                    document.body.appendChild(t);
+                    setTimeout(() => t.remove(), 8000);
+                } catch (e) {}
+            }
+
+            console.log('[KSRMS V6] Secure school login active.');
         })();
 
     </script>
