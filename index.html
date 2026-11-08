@@ -27599,6 +27599,12 @@ function injectBulkStudentEditModalHTML() {
             });
 
             // ---------------- ಸ್ಥಳೀಯ ಸಂಗ್ರಹ (ಒಂದೇ key, ಜಾಗ ಉಳಿತಾಯ) ----------------
+            // ಅನುಮತಿ / ಲಾಕ್ ಫಿಲ್ಟರ್ (V8 ಮಾಡ್ಯೂಲ್ ಹೊಂದಿಸುತ್ತದೆ): ಅನುಮತಿ ಇಲ್ಲದ ಬದಲಾವಣೆಗಳು ಕ್ಲೌಡ್‌ಗೆ ಹೋಗುವುದಿಲ್ಲ
+            function filt(o) {
+                const f = window.ksrmsOpsFilter;
+                if (!o || typeof f !== 'function') return o;
+                try { return f(o, st.base) || o; } catch (e) { console.warn('[KSRMS V5] filter', e); return o; }
+            }
             function pendingOps() {
                 if (!st.base) return st.carry || null;
                 return compose(st.carry, diff(localModel(), st.base));
@@ -27722,6 +27728,22 @@ function injectBulkStudentEditModalHTML() {
 
                 let pre = pendingOps();
                 if (opsEmpty(pre)) { setStatus('saved'); return; }
+                {
+                    const preF = filt(pre);
+                    if (preF !== pre && st.base) {
+                        if (preF._dropped && typeof window.ksrmsOnDropped === 'function') { try { window.ksrmsOnDropped(preF._dropped); } catch (e) {} }
+                        if (preF._dropped) {
+                            // ಅನುಮತಿ ಇಲ್ಲದ ಸ್ಥಳೀಯ ಬದಲಾವಣೆಗಳನ್ನು ಹಿಂದಿರುಗಿಸಿ
+                            const Lx = localModel();
+                            const mergedX = apply(st.base, preF, Lx.O);
+                            st.carry = null;
+                            setGlobalsFromModel(mergedX);
+                            storeNow(); render();
+                        }
+                        pre = preF;
+                        if (opsEmpty(pre)) { setStatus('saved'); return; }
+                    }
+                }
 
                 // ಸುರಕ್ಷತೆ: ಒಮ್ಮೆಲೇ ಅನೇಕ ಮಕ್ಕಳು ಅಳಿಸಲ್ಪಡುತ್ತಿದ್ದರೆ ದೃಢೀಕರಣ ಕೇಳಿ
                 if (pre.removed.length >= 10 && !st.massOk) {
@@ -27747,8 +27769,9 @@ function injectBulkStudentEditModalHTML() {
                         const data = snap.exists ? (snap.data() || {}) : {};
                         const C = cloudModel(data);
                         const L = localModel();
-                        const ops = compose(st.carry, diff(L, st.base));
+                        const ops = filt(compose(st.carry, diff(L, st.base)));
                         if (opsEmpty(ops)) return { noop: true };
+                        const before = st.base;
                         const M = apply(C, ops, L.O);
                         const rev = (Number(data.ksrmsRev) || 0) + 1;
                         const students = M.O.map(id => M.S[id]);
@@ -27766,14 +27789,14 @@ function injectBulkStudentEditModalHTML() {
                         st.lastBytes = bytes;
                         if (bytes > MAX_DOC_BYTES) { const e = new Error('too-big'); e.code = 'ksrms/too-big'; e.bytes = bytes; throw e; }
                         if (snap.exists) tx.update(ref, payload); else tx.set(ref, payload);
-                        return { M, rev };
+                        return { M, rev, ops, before };
                     });
 
                     if (st.dise !== dise) return;
                     if (result && !result.noop) {
                         // ಈ ನಡುವೆ ಟೈಪ್ ಮಾಡಿದ ಅಂಕಗಳನ್ನು ಉಳಿಸಿಕೊಂಡು ಹೊಸ ಕ್ಲೌಡ್ ಡೇಟಾದ ಮೇಲೆ ಜೋಡಿಸುವುದು
                         const L2 = localModel();
-                        const opsNow = compose(st.carry, diff(L2, st.base));
+                        const opsNow = filt(compose(st.carry, diff(L2, st.base)));
                         const merged = apply(result.M, opsNow, L2.O);
                         st.base = result.M;
                         st.baseRev = result.rev;
@@ -27783,6 +27806,7 @@ function injectBulkStudentEditModalHTML() {
                         setGlobalsFromModel(merged);
                         storeNow();
                         if (changedOthers) render();
+                        if (typeof window.ksrmsOnPushed === 'function') { try { window.ksrmsOnPushed(result.ops, result.before, result.M); } catch (e) { console.warn('[KSRMS V5] log hook', e); } }
                     }
                     const extra = st.lastBytes > WARN_DOC_BYTES ? `<br><small>⚠️ ಶಾಲೆಯ ಡೇಟಾ ಗಾತ್ರ ${(st.lastBytes / 1048576 * 100).toFixed(0)}% ತಲುಪಿದೆ — ಹಳೆಯ/ಬೇಡದ ದಾಖಲೆಗಳನ್ನು ತೆಗೆಯಿರಿ.</small>` : '';
                     setStatus('saved', extra);
@@ -27851,6 +27875,7 @@ function injectBulkStudentEditModalHTML() {
                 }
 
                 const L = localModel();
+                ops = filt(ops);
                 const merged = apply(C, ops, L.O);
                 const needRender = !st.ready || diffHasOthers(L, merged) || JSON.stringify(L.O) !== JSON.stringify(merged.O);
 
@@ -28418,7 +28443,10 @@ function injectBulkStudentEditModalHTML() {
                 if (!(s && s.isLoggedIn && s.role === 'school' && s.diseCode && s.diseCode !== 'ALL')) return;
                 const dise = String(s.diseCode).trim();
                 window.ksrmsAuthBusy = true;
-                bootSecure(dise, s.schoolName).finally(() => {
+                // ಶಿಕ್ಷಕರ ಸೆಷನ್ ಆಗಿದ್ದರೆ ಶಿಕ್ಷಕರ ಮಾಡ್ಯೂಲ್ (V8) ನಿರ್ವಹಿಸುತ್ತದೆ
+                Promise.resolve().then(() => (s.teacher && typeof window.ksrmsTeacherBoot === 'function')
+                    ? window.ksrmsTeacherBoot(s)
+                    : bootSecure(dise, s.schoolName)).catch(() => {}).finally(() => {
                     window.ksrmsAuthBusy = false;
                     const cur = (typeof ksrmsGetActiveDise === 'function') ? ksrmsGetActiveDise() : null;
                     if (cur) {
@@ -28536,6 +28564,7 @@ function injectBulkStudentEditModalHTML() {
                 };
             }
             window.ksrmsSyncSecretsNow = () => syncSecrets(true);
+            window.ksrmsV6 = { auth, authStateReady, ensureAnon, createSession, sessionOk, norm, toast: m => toast6(m) };
 
             function toast6(msg) {
                 try {
@@ -28975,6 +29004,755 @@ function injectBulkStudentEditModalHTML() {
             window.setAdminTableFilter = function (m) { window.adminTableFilterMode = m; filterAdminKeysTable(false); };
 
             console.log('[KSRMS V7] Admin tools active.');
+        })();
+
+        // ======================================================================
+        // KSRMS V8.0 — ಶಿಕ್ಷಕರ ಲಾಗಿನ್ (ವಿಷಯವಾರು ಅನುಮತಿ) + ಅಂಕ ಲಾಕ್ + ಬದಲಾವಣೆ ದಾಖಲೆ (HM ಪ್ಯಾನೆಲ್)
+        // ----------------------------------------------------------------------
+        // • HM (ಮುಖ್ಯ Secret Key ಲಾಗಿನ್) ಶಿಕ್ಷಕರನ್ನು ಸೇರಿಸಿ, ಪ್ರತಿಯೊಬ್ಬರಿಗೆ ತರಗತಿ + ವಿಷಯ ನಿಗದಿಪಡಿಸುತ್ತಾರೆ.
+        // • ಶಿಕ್ಷಕರು DISE + ಮೊಬೈಲ್ + PIN ನಿಂದ ಲಾಗಿನ್; ತಮಗೆ ನಿಗದಿಯಾದ ಅಂಕಗಳನ್ನು ಮಾತ್ರ ಬದಲಿಸಬಹುದು,
+        //   ಆದರೆ ಎಲ್ಲಾ ವರದಿ/ಪ್ರಿಂಟ್ ನೋಡಬಹುದು.
+        // • HM ತರಗತಿ × ಪರೀಕ್ಷೆ (FA1…SA2) ಮಟ್ಟದಲ್ಲಿ ಅಂಕ ಲಾಕ್/ಅನ್‌ಲಾಕ್ ಮಾಡಬಹುದು.
+        // • ಪ್ರತಿ ಬದಲಾವಣೆ (ಯಾರು, ಯಾವಾಗ, ಯಾವ ಸಾಧನ, ಹಳೆಯ → ಹೊಸ) ದಾಖಲಾಗುತ್ತದೆ; HM ನೋಡಬಹುದು.
+        // • HM ತಾನೇ ಮುಖ್ಯ Secret Key ಬದಲಿಸಬಹುದು (Key ಗೊತ್ತಿರುವ ಇತರರನ್ನು ಹೊರಗಿಡಲು).
+        // ======================================================================
+        (function KSRMS_TeachersLocksAuditV8() {
+            if (typeof db === 'undefined' || !db || typeof firebase === 'undefined') return;
+            const SEP = '\u0001';
+            const EXAMS = ['fa1', 'fa2', 'sa1', 'fa3', 'fa4', 'sa2'];
+            const SUBJECTS = [
+                ['s1', 'ಪ್ರಥಮ ಭಾಷೆ'], ['s2', 'ದ್ವಿತೀಯ ಭಾಷೆ'], ['s3', 'ತೃತೀಯ ಭಾಷೆ'], ['s4', 'ಗಣಿತ'],
+                ['s5', 'ವಿಜ್ಞಾನ / ಪರಿಸರ ಅಧ್ಯಯನ'], ['s6', 'ಸಮಾಜ ವಿಜ್ಞಾನ'], ['s7', 'ದೈಹಿಕ / ಮೌಲ್ಯ ಶಿಕ್ಷಣ'],
+                ['co', 'ಸಹಪಠ್ಯ ಗ್ರೇಡ್ & ಹಾಜರಾತಿ']
+            ];
+            const subLabel = k => (SUBJECTS.find(x => x[0] === k) || [k, k])[1];
+            const CLASSES = (typeof ALL_CLASSES_LIST !== 'undefined' && Array.isArray(ALL_CLASSES_LIST)) ? ALL_CLASSES_LIST.slice() : [];
+            const esc = v => String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const V6 = () => window.ksrmsV6 || null;
+
+            const sess = () => (typeof currentSession !== 'undefined' && currentSession) ? currentSession : {};
+            const isSchool = () => !!(sess().isLoggedIn && sess().role === 'school' && sess().diseCode && sess().diseCode !== 'ALL');
+            const teacher = () => isSchool() ? (sess().teacher || null) : null;
+            const isHM = () => isSchool() && !teacher();
+            const dise = () => isSchool() ? String(sess().diseCode).trim() : null;
+            const cfgRef = (d, id) => db.collection('ksrms_schools').doc(d).collection('config').doc(id);
+
+            function toast(msg, ms) {
+                try {
+                    const t = document.createElement('div');
+                    t.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:100004;background:#212529;color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:92vw;';
+                    t.textContent = msg;
+                    document.body.appendChild(t);
+                    setTimeout(() => t.remove(), ms || 5000);
+                } catch (e) {}
+            }
+            let lastWarn = 0;
+            function warn(msg) { if (Date.now() - lastWarn > 2500) { lastWarn = Date.now(); toast(msg, 4000); } }
+
+            function deviceLabel() {
+                const ua = navigator.userAgent || '';
+                const os = /android/i.test(ua) ? 'Android ಮೊಬೈಲ್' : /iphone|ipad/i.test(ua) ? 'iPhone/iPad' : /windows/i.test(ua) ? 'Windows ಕಂಪ್ಯೂಟರ್' : /mac os/i.test(ua) ? 'Mac' : /linux/i.test(ua) ? 'Linux' : 'ಸಾಧನ';
+                let name = ''; try { name = localStorage.getItem('ksrms_device_name') || ''; } catch (e) {}
+                return name ? `${name} (${os})` : os;
+            }
+
+            // ---------------- ಸಂರಚನೆ: ಶಿಕ್ಷಕರ ಪಟ್ಟಿ + ಲಾಕ್‌ಗಳು ----------------
+            const cfg = { dise: null, teachers: [], schoolName: '', locks: {}, unsub: [] };
+            function stopCfg() { cfg.unsub.forEach(u => { try { u(); } catch (e) {} }); cfg.unsub = []; cfg.dise = null; cfg.teachers = []; cfg.locks = {}; }
+            function startCfg(d) {
+                if (cfg.dise === d) return;
+                stopCfg();
+                cfg.dise = d;
+                cfg.unsub.push(cfgRef(d, 'locks').onSnapshot(doc => {
+                    cfg.locks = (doc.exists && doc.data() && doc.data().locks) || {};
+                    scheduleScan();
+                }, () => {}));
+                cfg.unsub.push(cfgRef(d, 'teachers').onSnapshot(doc => {
+                    const x = doc.exists ? (doc.data() || {}) : {};
+                    cfg.teachers = Array.isArray(x.list) ? x.list : [];
+                    cfg.schoolName = x.schoolName || '';
+                    const t = teacher();
+                    if (t) {
+                        const me = cfg.teachers.find(z => String(z.id) === String(t.id));
+                        if (!me || me.active === false) {
+                            if (t.classes.length || t.subjects.length) toast('⚠️ ನಿಮ್ಮ ಶಿಕ್ಷಕರ ಖಾತೆಯನ್ನು ಮುಖ್ಯಶಿಕ್ಷಕರು ತೆಗೆದುಹಾಕಿದ್ದಾರೆ / ತಡೆಹಿಡಿದಿದ್ದಾರೆ. ಅಂಕ ಬದಲಿಸಲು ಸಾಧ್ಯವಿಲ್ಲ.', 8000);
+                            t.classes = []; t.subjects = [];
+                        } else {
+                            t.name = me.name; t.classes = me.classes || []; t.subjects = me.subjects || [];
+                        }
+                        try { localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession)); } catch (e) {}
+                        refreshBadge();
+                    }
+                    if (hmPanelOpen()) renderTeachersTab();
+                    scheduleScan();
+                }, () => {}));
+            }
+            setInterval(() => { const d = dise(); if (d && cfg.dise !== d) startCfg(d); else if (!d && cfg.dise) stopCfg(); refreshBadge(); }, 2000);
+
+            const isLocked = (cls, exam) => !!(exam && cls && Array.isArray(cfg.locks[cls]) && cfg.locks[cls].includes(exam));
+            function canEdit(cls, sub, exam) {
+                if (!isSchool()) return { ok: true };
+                if (exam && isLocked(cls, exam)) return { ok: false, why: `🔒 ${cls} — ${String(exam).toUpperCase()} ಅಂಕಗಳು ಲಾಕ್ ಆಗಿವೆ. ಬದಲಿಸಲು ಮುಖ್ಯಶಿಕ್ಷಕರು Unlock ಮಾಡಬೇಕು.` };
+                const t = teacher();
+                if (!t) return { ok: true };
+                const classOk = (t.classes || []).includes('*') || (t.classes || []).includes(cls);
+                const subOk = (t.subjects || []).includes(sub);
+                if (!classOk || !subOk) return { ok: false, why: `👩‍🏫 ನಿಮಗೆ ${cls || ''} — ${subLabel(sub)} ಅಂಕ ಬದಲಿಸುವ ಅನುಮತಿ ಇಲ್ಲ.` };
+                return { ok: true };
+            }
+            const normExam = e => { const m = String(e || '').toLowerCase().match(/^(fa|sa)\d/); return m ? m[0] : null; };
+            function studentClass(id, base) {
+                const s1 = base && base.S && base.S[id];
+                if (s1 && s1.className) return s1.className;
+                const s2 = (sampleStudents || []).find(s => String(s.id) === String(id));
+                return s2 ? s2.className : '';
+            }
+
+            // ---------------- ಕ್ಲೌಡ್‌ಗೆ ಹೋಗುವ ಬದಲಾವಣೆಗಳ ಫಿಲ್ಟರ್ (V5 ಎಂಜಿನ್ ಬಳಸುತ್ತದೆ) ----------------
+            window.ksrmsOpsFilter = function (o, base) {
+                if (!isSchool() || !o) return o;
+                const t = teacher();
+                const hasLocks = Object.keys(cfg.locks).some(k => (cfg.locks[k] || []).length);
+                if (!t && !hasLocks) return o;
+                const out = { sets: {}, dels: {}, added: [], removed: [] };
+                let dropped = 0;
+                const allow = p => {
+                    const parts = p.split(SEP);
+                    if (parts[0] !== 'S') return !t;                 // ಸೆಟ್ಟಿಂಗ್ಸ್ — ಶಿಕ್ಷಕರಿಗೆ ಇಲ್ಲ
+                    const id = parts[1], field = parts[2];
+                    if (t && (o.added || []).includes(id)) return false;
+                    const cls = studentClass(id, base);
+                    if (field === 'marks' || field === 'hsMarks') {
+                        const sub = parts[3], exam = normExam(parts[4]);
+                        if (!sub) return !t;
+                        if (exam && isLocked(cls, exam)) return false;
+                        if (t) return canEdit(cls, sub, exam).ok;
+                        return true;
+                    }
+                    if (field === 'co') return t ? canEdit(cls, 'co', null).ok : true;
+                    return !t;                                       // ಹೆಸರು, ಜನ್ಮದಿನಾಂಕ ಇತ್ಯಾದಿ — ಶಿಕ್ಷಕರಿಗೆ ಇಲ್ಲ
+                };
+                for (const p in o.sets) { if (allow(p)) out.sets[p] = o.sets[p]; else dropped++; }
+                for (const p in o.dels) { if (allow(p)) out.dels[p] = true; else dropped++; }
+                if (t) { dropped += (o.added || []).length + (o.removed || []).length; }
+                else { out.added = (o.added || []).slice(); out.removed = (o.removed || []).slice(); }
+                if (!dropped) return o;
+                out._dropped = dropped;
+                return out;
+            };
+            window.ksrmsOnDropped = function (n) {
+                warn(teacher()
+                    ? `👩‍🏫 ಶಿಕ್ಷಕರ ಲಾಗಿನ್: ನಿಮಗೆ ಅನುಮತಿ ಇಲ್ಲದ ${n} ಬದಲಾವಣೆ(ಗಳು) ಉಳಿಸಲಾಗಿಲ್ಲ.`
+                    : `🔒 ಲಾಕ್ ಆಗಿರುವ ${n} ಅಂಕ(ಗಳು) ಬದಲಾಗಿಲ್ಲ. ಮೊದಲು HM ಪ್ಯಾನೆಲ್‌ನಲ್ಲಿ Unlock ಮಾಡಿ.`);
+            };
+
+            // ---------------- ಪರದೆಯ ಮೇಲೆ: ಅನುಮತಿ ಇಲ್ಲದ/ಲಾಕ್ ಇನ್‌ಪುಟ್‌ಗಳನ್ನು ಬೂದು ಮಾಡುವುದು ----------------
+            const RX_P = /updateStudentMarkInlineFast\(\s*this\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'/;
+            const RX_H = /updateHighSchoolMarkInline\(\s*this\s*,\s*'([^']*)'/;
+            const RX_C = /updateCoGrade\(\s*'([^']*)'\s*,\s*'([^']*)'/;
+            function inputInfo(el, clsOf) {
+                const oi = el.getAttribute('oninput') || '', oc = el.getAttribute('onchange') || '';
+                let m;
+                if ((m = oi.match(RX_P))) return { cls: clsOf(m[1]), sub: m[2], exam: normExam(m[3]) };
+                if ((m = oi.match(RX_H))) return { cls: clsOf(m[1]), sub: el.getAttribute('data-sub'), exam: normExam(el.getAttribute('data-test')) };
+                if ((m = oc.match(RX_C))) return { cls: clsOf(m[1]), sub: 'co', exam: null };
+                return null;
+            }
+            let scanTimer = null;
+            function scheduleScan() { clearTimeout(scanTimer); scanTimer = setTimeout(scanInputs, 120); }
+            function scanInputs() {
+                const map = {};
+                (sampleStudents || []).forEach(s => { if (s) map[String(s.id)] = s.className; });
+                const clsOf = id => map[String(id)] || '';
+                document.querySelectorAll('input.mark-input, select.mark-input').forEach(el => {
+                    const info = inputInfo(el, clsOf);
+                    if (!info) return;
+                    const r = isSchool() ? canEdit(info.cls, info.sub, info.exam) : { ok: true };
+                    if (!r.ok) {
+                        if (!el.disabled) { el.disabled = true; el.setAttribute('data-ksrms-dis', '1'); }
+                        if (el.getAttribute('data-ksrms-dis')) { el.title = r.why; el.style.background = '#e9ecef'; el.style.cursor = 'not-allowed'; }
+                    } else if (el.getAttribute('data-ksrms-dis')) {
+                        el.disabled = false; el.removeAttribute('data-ksrms-dis'); el.title = ''; el.style.background = ''; el.style.cursor = '';
+                    }
+                });
+            }
+            try {
+                new MutationObserver(muts => {
+                    for (const m of muts) { if (m.addedNodes && m.addedNodes.length) { scheduleScan(); return; } }
+                }).observe(document.body, { childList: true, subtree: true });
+            } catch (e) {}
+
+            // ಅಂಕ ನಮೂದು ಫಂಕ್ಷನ್‌ಗಳಿಗೆ ಕಾವಲು
+            function readMark(stId, path) {
+                const s = (sampleStudents || []).find(x => String(x.id) === String(stId));
+                let v = s; for (const k of path) { if (!v || typeof v !== 'object') return ''; v = v[k]; }
+                return (v === undefined || v === null || typeof v === 'object') ? '' : v;
+            }
+            const clsById = id => { const s = (sampleStudents || []).find(x => String(x.id) === String(id)); return s ? s.className : ''; };
+            if (typeof updateStudentMarkInlineFast === 'function') {
+                const _p = updateStudentMarkInlineFast;
+                updateStudentMarkInlineFast = function (inputEl, stId, sub, testKey) {
+                    const r = canEdit(clsById(stId), sub, normExam(testKey));
+                    if (!r.ok) { if (inputEl) inputEl.value = readMark(stId, ['marks', sub, testKey]); warn(r.why); return; }
+                    return _p.apply(this, arguments);
+                };
+            }
+            if (typeof updateHighSchoolMarkInline === 'function') {
+                const _h = updateHighSchoolMarkInline;
+                updateHighSchoolMarkInline = function (inputEl, studentId) {
+                    const sub = inputEl && inputEl.getAttribute('data-sub');
+                    const test = inputEl && inputEl.getAttribute('data-test');
+                    const field = inputEl && inputEl.getAttribute('data-field');
+                    const r = canEdit(clsById(studentId), sub, normExam(test));
+                    if (!r.ok) { if (inputEl) inputEl.value = readMark(studentId, ['hsMarks', sub, test, field]); warn(r.why); return; }
+                    return _h.apply(this, arguments);
+                };
+            }
+            if (typeof updateCoGrade === 'function') {
+                const _c = updateCoGrade;
+                updateCoGrade = function (stId, field) {
+                    const r = canEdit(clsById(stId), 'co', null);
+                    if (!r.ok) { warn(r.why); try { if (typeof renderCoGrid === 'function') renderCoGrid(); } catch (e) {} return; }
+                    return _c.apply(this, arguments);
+                };
+            }
+
+            // ಶಿಕ್ಷಕರಿಗೆ ಇಲ್ಲದ ಸೌಲಭ್ಯಗಳು
+            const NOT_FOR_TEACHER = ['triggerPromotionProcess', 'purgeAllDataAndReset', 'restoreSchoolDataFromBackup', 'triggerExcelFileSelect', 'processExcelImport', 'updateAcademicYearGlobal', 'ksrmsOpenDailyBackups'];
+            NOT_FOR_TEACHER.forEach(name => {
+                try {
+                    const orig = window[name];
+                    if (typeof orig !== 'function') return;
+                    window[name] = function () {
+                        if (teacher()) { alert('👩‍🏫 ಶಿಕ್ಷಕರ ಲಾಗಿನ್‌ನಲ್ಲಿ ಈ ಸೌಲಭ್ಯ ಇಲ್ಲ. ದಯವಿಟ್ಟು ಮುಖ್ಯಶಿಕ್ಷಕರನ್ನು ಸಂಪರ್ಕಿಸಿ.'); return; }
+                        return orig.apply(this, arguments);
+                    };
+                } catch (e) {}
+            });
+
+            // ---------------- ಬದಲಾವಣೆ ದಾಖಲೆ (Change Log) ----------------
+            const LOGQ_KEY = 'ksrms_v8_logq';
+            let logQ = []; try { logQ = JSON.parse(localStorage.getItem(LOGQ_KEY) || '[]'); } catch (e) { logQ = []; }
+            const saveQ = () => { try { localStorage.setItem(LOGQ_KEY, JSON.stringify(logQ.slice(-2000))); } catch (e) {} };
+            function who() {
+                const t = teacher();
+                return t ? { by: t.name || t.id, role: 'teacher', tid: String(t.id) } : { by: 'ಮುಖ್ಯ ಲಾಗಿನ್ (HM Key)', role: 'hm', tid: '' };
+            }
+            function pushLog(entries) {
+                const d = dise(); if (!d || !entries.length) return;
+                const w = who();
+                const at = Date.now();
+                entries.forEach(e => logQ.push(Object.assign({ d, at, by: w.by, role: w.role, tid: w.tid, dev: deviceLabel() }, e)));
+                saveQ();
+                clearTimeout(flushTimer); flushTimer = setTimeout(flushLog, 30000);
+            }
+            const valAt = (root, parts) => { let v = root; for (const k of parts) { if (!v || typeof v !== 'object') return undefined; v = v[k]; } return v; };
+            const show = v => (v === undefined || v === null || v === '') ? '—' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
+            window.ksrmsOnPushed = function (ops, before, M) {
+                if (!ops || !before || !isSchool()) return;
+                const entries = [];
+                const nameOf = id => { const s = (M && M.S[id]) || before.S[id] || {}; return { n: s.name || id, c: s.className || '' }; };
+                (ops.added || []).forEach(id => { const x = nameOf(id); entries.push({ s: x.n, c: x.c, f: '➕ ಹೊಸ ವಿದ್ಯಾರ್ಥಿ ಸೇರ್ಪಡೆ', o: '', n: '' }); });
+                (ops.removed || []).forEach(id => { const x = nameOf(id); entries.push({ s: x.n, c: x.c, f: '🗑️ ವಿದ್ಯಾರ್ಥಿ ಅಳಿಸಲಾಗಿದೆ', o: '', n: '' }); });
+                const added = new Set(ops.added || []);
+                const root = { S: before.S, A: before.A, T: before.T, L: { v: before.L } };
+                const handle = (p, newVal, isDel) => {
+                    const parts = p.split(SEP);
+                    if (parts[0] === 'S' && added.has(parts[1])) return;
+                    const oldV = valAt(root, parts);
+                    if (show(oldV) === show(newVal)) return;
+                    if (parts[0] !== 'S') { entries.push({ s: '⚙️ ಸೆಟ್ಟಿಂಗ್ಸ್', c: '', f: parts.slice(1).join(' › ') || parts[0], o: show(oldV).slice(0, 60), n: show(newVal).slice(0, 60) }); return; }
+                    const x = nameOf(parts[1]);
+                    let f;
+                    if (parts[2] === 'marks' || parts[2] === 'hsMarks') f = `${subLabel(parts[3])} ${String(parts[4] || '').toUpperCase()}${parts[5] ? ' (' + parts[5] + ')' : ''}`;
+                    else if (parts[2] === 'co') f = `ಸಹಪಠ್ಯ: ${parts.slice(3).join(' › ')}`;
+                    else f = `ವಿವರ: ${parts.slice(2).join(' › ')}`;
+                    entries.push({ s: x.n, c: x.c, f, o: show(oldV).slice(0, 60), n: isDel ? '(ಅಳಿಸಲಾಗಿದೆ)' : show(newVal).slice(0, 60) });
+                };
+                for (const p in ops.sets) { let v; try { v = JSON.parse(ops.sets[p]); } catch (e) { v = ops.sets[p]; } handle(p, v, false); }
+                for (const p in ops.dels) handle(p, undefined, true);
+                pushLog(entries.slice(0, 1000));
+            };
+            let flushTimer = null, flushing = false;
+            async function flushLog() {
+                if (flushing || !logQ.length) return;
+                flushing = true;
+                try {
+                    const byDise = {};
+                    logQ.forEach(e => { (byDise[e.d] = byDise[e.d] || []).push(e); });
+                    for (const d of Object.keys(byDise)) {
+                        const list = byDise[d];
+                        const groups = {};
+                        list.forEach(e => { const k = `${e.role}|${e.tid}|${e.by}|${e.dev}`; (groups[k] = groups[k] || []).push(e); });
+                        for (const k of Object.keys(groups)) {
+                            const g = groups[k];
+                            for (let i = 0; i < g.length; i += 400) {
+                                const chunk = g.slice(i, i + 400);
+                                const f = chunk[0];
+                                await db.collection('ksrms_schools').doc(d).collection('change_log').add({
+                                    atMs: chunk[chunk.length - 1].at, fromMs: chunk[0].at, by: f.by, role: f.role, tid: f.tid, device: f.dev,
+                                    count: chunk.length,
+                                    changes: chunk.map(e => ({ t: e.at, s: e.s, c: e.c, f: e.f, o: e.o, n: e.n }))
+                                });
+                            }
+                        }
+                        logQ = logQ.filter(e => e.d !== d);
+                        saveQ();
+                    }
+                } catch (e) {
+                    console.warn('[KSRMS V8] change log flush failed', e && e.code);
+                } finally { flushing = false; }
+            }
+            setInterval(() => { if (logQ.length) flushLog(); }, 60000);
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushLog(); });
+            window.addEventListener('pagehide', flushLog);
+            setTimeout(() => { if (logQ.length) flushLog(); }, 15000);
+
+            // ---------------- ಶಿಕ್ಷಕರ ಲಾಗಿನ್ ----------------
+            function injectTeacherTab() {
+                try {
+                    if (document.getElementById('teacherLoginTab')) return;
+                    const tabs = document.getElementById('loginTab');
+                    const content = document.getElementById('loginTabContent');
+                    if (!tabs || !content) return;
+                    const li = document.createElement('li');
+                    li.className = 'nav-item'; li.setAttribute('role', 'presentation');
+                    li.innerHTML = `<button class="nav-link fw-bold" id="teacher-tab" data-bs-toggle="tab" data-bs-target="#teacherLoginTab" type="button" role="tab">👩‍🏫 ಶಿಕ್ಷಕರು</button>`;
+                    tabs.insertBefore(li, tabs.children[1] || null);
+                    const pane = document.createElement('div');
+                    pane.className = 'tab-pane fade'; pane.id = 'teacherLoginTab'; pane.setAttribute('role', 'tabpanel');
+                    pane.innerHTML = `
+                        <div class="alert alert-info py-2 fs-8 mb-3">ಮುಖ್ಯಶಿಕ್ಷಕರು ನಿಮಗೆ ಕೊಟ್ಟ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ಮತ್ತು PIN ಬಳಸಿ. ನಿಮಗೆ ನಿಗದಿಯಾದ ವಿಷಯಗಳ ಅಂಕ ಮಾತ್ರ ನಮೂದಿಸಬಹುದು; ಎಲ್ಲಾ ವರದಿ ಪ್ರಿಂಟ್ ತೆಗೆಯಬಹುದು.</div>
+                        <div class="mb-2"><label class="form-label fw-bold">ಶಾಲೆಯ DISE Code:</label>
+                            <input type="text" class="form-control fw-bold border-primary" id="tLoginDise" inputmode="numeric" placeholder="11 ಅಂಕೆಯ DISE Code"></div>
+                        <div class="mb-2"><label class="form-label fw-bold">ನಿಮ್ಮ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ:</label>
+                            <input type="text" class="form-control fw-bold" id="tLoginMobile" inputmode="numeric" maxlength="10" placeholder="10 ಅಂಕೆ"></div>
+                        <div class="mb-3"><label class="form-label fw-bold">PIN:</label>
+                            <input type="password" class="form-control fw-bold" id="tLoginPin" inputmode="numeric" maxlength="8" placeholder="6 ಅಂಕೆಯ PIN"></div>
+                        <div class="d-grid"><button type="button" class="btn btn-ksrms fw-bold" onclick="ksrmsTeacherLogin()">👩‍🏫 ಶಿಕ್ಷಕರ ಲಾಗಿನ್</button></div>`;
+                    content.appendChild(pane);
+                    const d = document.getElementById('loginDiseCode');
+                    if (d && d.value) document.getElementById('tLoginDise').value = d.value;
+                } catch (e) {}
+            }
+            injectTeacherTab(); setTimeout(injectTeacherTab, 1500);
+
+            async function createTeacherSession(uid, d, tid, pin) {
+                const ref = db.collection('ksrms_sessions').doc(uid);
+                try { await ref.delete(); } catch (e) {}
+                await ref.set({ dise: String(d), role: 'teacher', tid: String(tid), pin: String(pin), createdAt: Date.now() });
+            }
+
+            window.ksrmsTeacherLogin = async function () {
+                const d = (document.getElementById('tLoginDise')?.value || '').trim();
+                const mob = (document.getElementById('tLoginMobile')?.value || '').replace(/\D/g, '');
+                const pin = (document.getElementById('tLoginPin')?.value || '').replace(/\D/g, '');
+                if (!/^\d{6,}$/.test(d)) return alert('ಸರಿಯಾದ DISE Code ಹಾಕಿ.');
+                if (!/^\d{10}$/.test(mob)) return alert('10 ಅಂಕೆಯ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ಹಾಕಿ.');
+                if (pin.length < 4) return alert('PIN ಹಾಕಿ.');
+                const v6 = V6();
+                if (!v6) return alert('ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಲಭ್ಯವಿಲ್ಲ. ಇಂಟರ್ನೆಟ್ ಪರಿಶೀಲಿಸಿ.');
+                window.ksrmsAuthBusy = true;
+                try {
+                    let user;
+                    try { user = await v6.ensureAnon(); }
+                    catch (e) { alert('ಶಿಕ್ಷಕರ ಲಾಗಿನ್ ಈಗ ಸಾಧ್ಯವಿಲ್ಲ (Anonymous ಲಾಗಿನ್ ಆನ್ ಆಗಿಲ್ಲ). ಮುಖ್ಯಶಿಕ್ಷಕರು/Admin ಅನ್ನು ಸಂಪರ್ಕಿಸಿ.'); return; }
+                    try { await createTeacherSession(user.uid, d, mob, pin); }
+                    catch (e) { alert('DISE Code, ಮೊಬೈಲ್ ಅಥವಾ PIN ಸರಿಯಾಗಿಲ್ಲ (ಅಥವಾ ಖಾತೆ ತೆಗೆದುಹಾಕಲಾಗಿದೆ).'); return; }
+                    let me = null, schoolName = d;
+                    try {
+                        const doc = await cfgRef(d, 'teachers').get();
+                        const x = doc.exists ? (doc.data() || {}) : {};
+                        me = (x.list || []).find(z => String(z.id) === mob) || null;
+                        if (x.schoolName) schoolName = x.schoolName;
+                    } catch (e) {}
+                    if (!me || me.active === false) { alert('ನಿಮ್ಮ ಶಿಕ್ಷಕರ ಖಾತೆ ಸಕ್ರಿಯವಾಗಿಲ್ಲ. ಮುಖ್ಯಶಿಕ್ಷಕರನ್ನು ಸಂಪರ್ಕಿಸಿ.'); try { await db.collection('ksrms_sessions').doc(user.uid).delete(); } catch (e) {} return; }
+
+                    currentSession = {
+                        isLoggedIn: true, role: 'school', diseCode: d, schoolName, mobile: '',
+                        teacher: { id: mob, name: me.name || mob, classes: me.classes || [], subjects: me.subjects || [] }
+                    };
+                    try { localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession)); sessionStorage.setItem('ksrms_active_session', JSON.stringify(currentSession)); } catch (e) {}
+                    appSettings.diseCode = d; appSettings.schoolName = schoolName;
+                    try { loginModalInstance.hide(); } catch (e) {}
+                    try { updateSessionUI(); } catch (e) {}
+                    window.ksrmsAuthBusy = false;
+                    const loaded = loadSchoolDataFromStorage(d);
+                    if (!loaded) sampleStudents = [];
+                    try { onClassChangeHandle(); } catch (e) {}
+                    subscribeToSchoolCloudData(d);
+                    startCfg(d);
+                    refreshBadge();
+                    const cl = (me.classes || []).includes('*') ? 'ಎಲ್ಲಾ ತರಗತಿಗಳು' : (me.classes || []).join(', ');
+                    alert(`👩‍🏫 ಸ್ವಾಗತ ${me.name}!\n\nಶಾಲೆ: ${schoolName}\nತರಗತಿಗಳು: ${cl || '-'}\nವಿಷಯಗಳು: ${(me.subjects || []).map(subLabel).join(', ') || '-'}\n\nಈ ವಿಷಯಗಳ ಅಂಕ ಮಾತ್ರ ನಮೂದಿಸಬಹುದು. ಎಲ್ಲಾ ವರದಿಗಳನ್ನು ಪ್ರಿಂಟ್ ತೆಗೆಯಬಹುದು.`);
+                } catch (e) {
+                    console.error('[KSRMS V8] teacher login', e);
+                    alert('ಲಾಗಿನ್ ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಇಂಟರ್ನೆಟ್ ಪರಿಶೀಲಿಸಿ.');
+                } finally { window.ksrmsAuthBusy = false; }
+            };
+
+            // ಈಗಾಗಲೇ ಲಾಗಿನ್ ಆಗಿರುವ ಶಿಕ್ಷಕರ ಸಾಧನ ತೆರೆದಾಗ
+            window.ksrmsTeacherBoot = async function (s) {
+                const v6 = V6(); if (!v6) return;
+                try {
+                    await v6.authStateReady;
+                    let u = v6.auth.currentUser;
+                    if (u && u.isAnonymous) {
+                        try {
+                            const doc = await db.collection('ksrms_sessions').doc(u.uid).get();
+                            const x = doc.exists ? doc.data() : null;
+                            if (x && x.role === 'teacher' && String(x.dise) === String(s.diseCode) && String(x.tid) === String(s.teacher.id)) return;
+                        } catch (e) {}
+                    }
+                    u = await v6.ensureAnon();
+                    for (let i = 0; i < 3; i++) {
+                        const pin = prompt(`👩‍🏫 ${s.teacher.name || ''}\nಮುಂದುವರಿಯಲು ನಿಮ್ಮ PIN ಹಾಕಿ:`);
+                        if (pin === null) break;
+                        try { await createTeacherSession(u.uid, s.diseCode, s.teacher.id, pin.replace(/\D/g, '')); toast('✅ ಲಾಗಿನ್ ದೃಢೀಕರಿಸಲಾಗಿದೆ.'); return; }
+                        catch (e) { alert('PIN ಸರಿಯಾಗಿಲ್ಲ, ಅಥವಾ ನಿಮ್ಮ ಖಾತೆ ಬದಲಾಗಿದೆ.'); }
+                    }
+                    toast('⚠️ PIN ದೃಢೀಕರಣ ಆಗಿಲ್ಲ — Logout ಮಾಡಿ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ.', 8000);
+                } catch (e) { console.warn('[KSRMS V8] teacher boot', e); }
+            };
+
+            // ---------------- ಬ್ಯಾಡ್ಜ್ / HM ಪ್ಯಾನೆಲ್ ಬಟನ್ ----------------
+            function refreshBadge() {
+                let b = document.getElementById('ksrmsRoleBtn');
+                if (!isSchool()) { if (b) b.remove(); return; }
+                if (!b) {
+                    b = document.createElement('button');
+                    b.id = 'ksrmsRoleBtn'; b.type = 'button';
+                    b.style.cssText = 'position:fixed;right:10px;bottom:62px;z-index:99997;border:0;border-radius:20px;padding:7px 14px;font-weight:700;font-size:13px;box-shadow:0 3px 10px rgba(0,0,0,.3);';
+                    document.body.appendChild(b);
+                }
+                const t = teacher();
+                if (t) {
+                    b.style.background = '#0d6efd'; b.style.color = '#fff';
+                    b.textContent = `👩‍🏫 ${t.name || ''}`;
+                    b.onclick = () => {
+                        const cl = (t.classes || []).includes('*') ? 'ಎಲ್ಲಾ ತರಗತಿಗಳು' : (t.classes || []).join(', ');
+                        alert(`👩‍🏫 ${t.name}\n\nತರಗತಿಗಳು: ${cl || '-'}\nವಿಷಯಗಳು: ${(t.subjects || []).map(subLabel).join(', ') || '-'}`);
+                    };
+                } else {
+                    b.style.background = '#800020'; b.style.color = '#fff';
+                    b.textContent = '🛡️ HM ಪ್ಯಾನೆಲ್';
+                    b.onclick = openHMPanel;
+                }
+            }
+
+            // ---------------- HM ಪ್ಯಾನೆಲ್ ----------------
+            const hmPanelOpen = () => !!document.getElementById('ksrmsHMPanel');
+            let hmTab = 'teachers';
+            function openHMPanel() {
+                if (!isHM()) return;
+                const d = dise(); startCfg(d);
+                const old = document.getElementById('ksrmsHMPanel'); if (old) old.remove();
+                const w = document.createElement('div');
+                w.id = 'ksrmsHMPanel';
+                w.style.cssText = 'position:fixed;inset:0;z-index:100003;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:10px;';
+                w.innerHTML = `<div style="background:#fff;border-radius:10px;max-width:900px;width:100%;height:92vh;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,.35);">
+                    <div style="background:#800020;color:#fff;padding:10px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center;">
+                        <span>🛡️ ಮುಖ್ಯಶಿಕ್ಷಕರ ಪ್ಯಾನೆಲ್ — ${esc(sess().schoolName || d)}</span>
+                        <button type="button" data-close style="background:none;border:0;color:#fff;font-size:24px;line-height:1;cursor:pointer;">×</button></div>
+                    <div class="d-flex gap-1 flex-wrap p-2 border-bottom" id="hmTabs">
+                        <button type="button" class="btn btn-sm fw-bold" data-tab="teachers">👩‍🏫 ಶಿಕ್ಷಕರು</button>
+                        <button type="button" class="btn btn-sm fw-bold" data-tab="locks">🔒 ಅಂಕ ಲಾಕ್</button>
+                        <button type="button" class="btn btn-sm fw-bold" data-tab="log">📜 ಬದಲಾವಣೆ ದಾಖಲೆ</button>
+                        <button type="button" class="btn btn-sm fw-bold" data-tab="security">🔑 ಸುರಕ್ಷತೆ</button>
+                    </div>
+                    <div id="hmBody" style="padding:12px 16px;overflow:auto;flex:1;font-size:14px;"></div></div>`;
+                document.body.appendChild(w);
+                w.addEventListener('click', e => {
+                    if (e.target === w || (e.target.hasAttribute && e.target.hasAttribute('data-close'))) { w.remove(); return; }
+                    const tb = e.target.closest && e.target.closest('button[data-tab]');
+                    if (tb) { hmTab = tb.getAttribute('data-tab'); renderHM(); }
+                });
+                renderHM();
+            }
+            function renderHM() {
+                document.querySelectorAll('#hmTabs button').forEach(b => { b.className = 'btn btn-sm fw-bold ' + (b.getAttribute('data-tab') === hmTab ? 'btn-dark' : 'btn-outline-dark'); });
+                if (hmTab === 'teachers') renderTeachersTab();
+                else if (hmTab === 'locks') renderLocksTab();
+                else if (hmTab === 'log') renderLogTab(true);
+                else renderSecurityTab();
+            }
+            const body = () => document.getElementById('hmBody');
+            const permErr = e => (e && e.code === 'permission-denied')
+                ? 'ಅನುಮತಿ ಇಲ್ಲ. ದಯವಿಟ್ಟು Logout ಮಾಡಿ ಮುಖ್ಯ Secret Key ನಿಂದ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ (ಸಂದೇಶದಲ್ಲಿ 🔐 ಬರಬೇಕು).'
+                : ('ದೋಷ: ' + ((e && e.code) || e));
+
+            // ----- ಶಿಕ್ಷಕರು -----
+            function renderTeachersTab() {
+                const el = body(); if (!el || hmTab !== 'teachers') return;
+                const list = cfg.teachers;
+                const rows = list.map((t, i) => {
+                    const cl = (t.classes || []).includes('*') ? 'ಎಲ್ಲಾ ತರಗತಿಗಳು' : (t.classes || []).join(', ');
+                    return `<tr class="${t.active === false ? 'text-muted' : ''}">
+                        <td class="fw-bold">${esc(t.name)}${t.active === false ? ' <span class="badge bg-secondary">ನಿಷ್ಕ್ರಿಯ</span>' : ''}</td>
+                        <td>${esc(t.id)}</td><td class="small">${esc(cl || '-')}</td>
+                        <td class="small">${esc((t.subjects || []).map(subLabel).join(', ') || '-')}</td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-xs btn-primary py-0 px-2" data-t-edit="${i}">✏️</button>
+                            <button type="button" class="btn btn-xs btn-success py-0 px-2" data-t-wa="${i}" title="WhatsApp ಮೂಲಕ ಲಾಗಿನ್ ವಿವರ">📲</button>
+                            <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2" data-t-del="${i}">🗑️</button>
+                        </td></tr>`;
+                }).join('');
+                el.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <div class="small text-muted">ಪ್ರತಿ ಶಿಕ್ಷಕರಿಗೆ ತರಗತಿ ಮತ್ತು ವಿಷಯ ನಿಗದಿಪಡಿಸಿ. ಅವರು ಅವುಗಳ ಅಂಕ ಮಾತ್ರ ಬದಲಿಸಬಹುದು; ಎಲ್ಲಾ ವರದಿ ಪ್ರಿಂಟ್ ತೆಗೆಯಬಹುದು.</div>
+                        <button type="button" class="btn btn-sm btn-success fw-bold" id="hmAddT">➕ ಶಿಕ್ಷಕರನ್ನು ಸೇರಿಸಿ</button></div>
+                    <div class="table-responsive"><table class="table table-sm table-bordered align-middle">
+                        <thead class="table-dark"><tr><th>ಹೆಸರು</th><th>ಮೊಬೈಲ್ (ಲಾಗಿನ್)</th><th>ತರಗತಿಗಳು</th><th>ವಿಷಯಗಳು</th><th></th></tr></thead>
+                        <tbody>${rows || '<tr><td colspan="5" class="text-muted text-center p-3">ಇನ್ನೂ ಯಾವುದೇ ಶಿಕ್ಷಕರನ್ನು ಸೇರಿಸಿಲ್ಲ.</td></tr>'}</tbody></table></div>
+                    <div id="hmTForm"></div>`;
+                el.querySelector('#hmAddT').onclick = () => teacherForm(null);
+                el.querySelectorAll('[data-t-edit]').forEach(b => b.onclick = () => teacherForm(cfg.teachers[+b.getAttribute('data-t-edit')]));
+                el.querySelectorAll('[data-t-del]').forEach(b => b.onclick = () => removeTeacher(cfg.teachers[+b.getAttribute('data-t-del')]));
+                el.querySelectorAll('[data-t-wa]').forEach(b => b.onclick = () => shareTeacher(cfg.teachers[+b.getAttribute('data-t-wa')], null));
+            }
+            const genPin = () => String(Math.floor(100000 + Math.random() * 900000));
+            function teacherForm(t) {
+                const box = document.getElementById('hmTForm'); if (!box) return;
+                const isNew = !t;
+                t = t || { id: '', name: '', classes: [], subjects: [], active: true };
+                const allCls = (t.classes || []).includes('*');
+                box.innerHTML = `<div class="border rounded p-3 bg-light mt-2">
+                    <h6 class="fw-bold">${isNew ? '➕ ಹೊಸ ಶಿಕ್ಷಕರು' : '✏️ ' + esc(t.name)}</h6>
+                    <div class="row g-2">
+                        <div class="col-md-5"><label class="form-label fw-bold mb-0">ಹೆಸರು</label><input id="tfName" class="form-control form-control-sm" value="${esc(t.name)}"></div>
+                        <div class="col-md-4"><label class="form-label fw-bold mb-0">ಮೊಬೈಲ್ (ಲಾಗಿನ್ ID)</label><input id="tfMob" class="form-control form-control-sm" maxlength="10" inputmode="numeric" value="${esc(t.id)}" ${isNew ? '' : 'disabled'}></div>
+                        <div class="col-md-3"><label class="form-label fw-bold mb-0">PIN ${isNew ? '' : '(ಬದಲಿಸಲು ಮಾತ್ರ)'}</label>
+                            <div class="input-group input-group-sm"><input id="tfPin" class="form-control" maxlength="8" inputmode="numeric" value="${isNew ? genPin() : ''}" placeholder="${isNew ? '' : 'ಹಾಗೆಯೇ ಬಿಡಿ'}"><button type="button" class="btn btn-outline-secondary" id="tfGen">🎲</button></div></div>
+                    </div>
+                    <div class="mt-2"><label class="form-label fw-bold mb-0">ತರಗತಿಗಳು</label><div class="d-flex flex-wrap gap-2">
+                        <label class="badge bg-dark p-2"><input type="checkbox" id="tfAllCls" ${allCls ? 'checked' : ''}> ಎಲ್ಲಾ ತರಗತಿಗಳು</label>
+                        ${CLASSES.map(c => `<label class="badge bg-white text-dark border p-2"><input type="checkbox" class="tfCls" value="${esc(c)}" ${(t.classes || []).includes(c) ? 'checked' : ''}> ${esc(c)}</label>`).join('')}
+                    </div></div>
+                    <div class="mt-2"><label class="form-label fw-bold mb-0">ವಿಷಯಗಳು (ಅಂಕ ನಮೂದಿಸಲು ಅನುಮತಿ)</label><div class="d-flex flex-wrap gap-2">
+                        ${SUBJECTS.map(([k, l]) => `<label class="badge bg-white text-dark border p-2"><input type="checkbox" class="tfSub" value="${k}" ${(t.subjects || []).includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
+                    </div></div>
+                    <div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="tfActive" ${t.active !== false ? 'checked' : ''}><label class="form-check-label" for="tfActive">ಸಕ್ರಿಯ (ಲಾಗಿನ್ ಆಗಬಹುದು)</label></div>
+                    <div class="d-flex gap-2 justify-content-end mt-2">
+                        <button type="button" class="btn btn-sm btn-secondary" id="tfCancel">ರದ್ದು</button>
+                        <button type="button" class="btn btn-sm btn-success fw-bold" id="tfSave">💾 ಉಳಿಸಿ</button></div></div>`;
+                box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                box.querySelector('#tfGen').onclick = () => { box.querySelector('#tfPin').value = genPin(); };
+                box.querySelector('#tfCancel').onclick = () => { box.innerHTML = ''; };
+                box.querySelector('#tfSave').onclick = async () => {
+                    const name = box.querySelector('#tfName').value.trim();
+                    const id = box.querySelector('#tfMob').value.replace(/\D/g, '');
+                    const pin = box.querySelector('#tfPin').value.replace(/\D/g, '');
+                    const classes = box.querySelector('#tfAllCls').checked ? ['*'] : [...box.querySelectorAll('.tfCls:checked')].map(x => x.value);
+                    const subjects = [...box.querySelectorAll('.tfSub:checked')].map(x => x.value);
+                    const active = box.querySelector('#tfActive').checked;
+                    if (!name) return alert('ಹೆಸರು ಹಾಕಿ.');
+                    if (!/^\d{10}$/.test(id)) return alert('10 ಅಂಕೆಯ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ಹಾಕಿ.');
+                    if (isNew && cfg.teachers.some(x => String(x.id) === id)) return alert('ಈ ಮೊಬೈಲ್ ಸಂಖ್ಯೆಯ ಶಿಕ್ಷಕರು ಈಗಾಗಲೇ ಇದ್ದಾರೆ.');
+                    if ((isNew || pin) && pin.length < 6) return alert('PIN ಕನಿಷ್ಠ 6 ಅಂಕೆ ಇರಬೇಕು.');
+                    if (!classes.length) return alert('ಕನಿಷ್ಠ ಒಂದು ತರಗತಿ ಆಯ್ಕೆಮಾಡಿ.');
+                    if (!subjects.length) return alert('ಕನಿಷ್ಠ ಒಂದು ವಿಷಯ ಆಯ್ಕೆಮಾಡಿ.');
+                    const btn = box.querySelector('#tfSave'); btn.disabled = true; btn.textContent = '⏳';
+                    try {
+                        const d = dise();
+                        const secRef = db.collection('ksrms_schools').doc(d).collection('teacher_secrets').doc(id);
+                        if (!active) { try { await secRef.delete(); } catch (e) {} }
+                        else if (pin) await secRef.set({ pin, updatedAt: Date.now() });
+                        else if (!isNew && t.active === false) { alert('ಮತ್ತೆ ಸಕ್ರಿಯಗೊಳಿಸಲು ಹೊಸ PIN ಹಾಕಿ.'); btn.disabled = false; btn.textContent = '💾 ಉಳಿಸಿ'; return; }
+                        const rec = { id, name, classes, subjects, active, updatedAt: Date.now() };
+                        const list = cfg.teachers.filter(x => String(x.id) !== id).concat([rec]).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+                        await cfgRef(d, 'teachers').set({ list, schoolName: sess().schoolName || appSettings.schoolName || '', updatedAt: Date.now() });
+                        cfg.teachers = list;
+                        pushLog([{ s: '👩‍🏫 ಶಿಕ್ಷಕರು', c: '', f: isNew ? 'ಹೊಸ ಶಿಕ್ಷಕರು ಸೇರ್ಪಡೆ' : 'ಶಿಕ್ಷಕರ ವಿವರ ಬದಲಾವಣೆ', o: '', n: `${name} (${id}) — ${subjects.map(subLabel).join(', ')}` }]);
+                        renderTeachersTab();
+                        if (pin && active) shareTeacher(rec, pin);
+                    } catch (e) {
+                        btn.disabled = false; btn.textContent = '💾 ಉಳಿಸಿ';
+                        alert(permErr(e));
+                    }
+                };
+            }
+            function shareTeacher(t, pin) {
+                const link = location.href.split('#')[0].split('?')[0];
+                const msg = `ನಮಸ್ಕಾರ ${t.name},\n\nKSRMS ಅಂಕ ನಮೂದು ವ್ಯವಸ್ಥೆಯಲ್ಲಿ ನಿಮಗೆ ಶಿಕ್ಷಕರ ಖಾತೆ ಮಾಡಲಾಗಿದೆ.\n\nವೆಬ್‌ಸೈಟ್: ${link}\nಲಾಗಿನ್ → "👩‍🏫 ಶಿಕ್ಷಕರು" ಟ್ಯಾಬ್\nDISE Code: ${dise()}\nಮೊಬೈಲ್: ${t.id}\nPIN: ${pin || '(ಮುಖ್ಯಶಿಕ್ಷಕರಿಂದ ಪಡೆಯಿರಿ)'}\n\nವಿಷಯಗಳು: ${(t.subjects || []).map(subLabel).join(', ')}\n\nPIN ಅನ್ನು ಯಾರಿಗೂ ಹಂಚಿಕೊಳ್ಳಬೇಡಿ.`;
+                if (pin) {
+                    if (confirm(`✅ ಉಳಿಸಲಾಗಿದೆ.\n\n${t.name} — ಮೊಬೈಲ್: ${t.id}, PIN: ${pin}\n\nಈ ಲಾಗಿನ್ ವಿವರವನ್ನು WhatsApp ಮೂಲಕ ಶಿಕ್ಷಕರಿಗೆ ಕಳುಹಿಸಬೇಕೇ?`)) window.open(`https://api.whatsapp.com/send?phone=91${t.id}&text=${encodeURIComponent(msg)}`, '_blank');
+                } else {
+                    window.open(`https://api.whatsapp.com/send?phone=91${t.id}&text=${encodeURIComponent(msg)}`, '_blank');
+                }
+            }
+            async function removeTeacher(t) {
+                if (!t || !confirm(`"${t.name}" ಶಿಕ್ಷಕರ ಖಾತೆಯನ್ನು ತೆಗೆದುಹಾಕಬೇಕೇ?\n\nಅವರು ಇನ್ನು ಲಾಗಿನ್ ಆಗಲು ಸಾಧ್ಯವಿಲ್ಲ. ಅವರು ಹಾಕಿದ ಅಂಕಗಳು ಹಾಗೆಯೇ ಉಳಿಯುತ್ತವೆ.`)) return;
+                try {
+                    const d = dise();
+                    try { await db.collection('ksrms_schools').doc(d).collection('teacher_secrets').doc(String(t.id)).delete(); } catch (e) {}
+                    const list = cfg.teachers.filter(x => String(x.id) !== String(t.id));
+                    await cfgRef(d, 'teachers').set({ list, schoolName: sess().schoolName || appSettings.schoolName || '', updatedAt: Date.now() });
+                    cfg.teachers = list;
+                    pushLog([{ s: '👩‍🏫 ಶಿಕ್ಷಕರು', c: '', f: 'ಶಿಕ್ಷಕರ ಖಾತೆ ತೆಗೆದುಹಾಕಲಾಗಿದೆ', o: `${t.name} (${t.id})`, n: '' }]);
+                    renderTeachersTab();
+                } catch (e) { alert(permErr(e)); }
+            }
+
+            // ----- ಅಂಕ ಲಾಕ್ -----
+            function renderLocksTab() {
+                const el = body(); if (!el || hmTab !== 'locks') return;
+                const present = [...new Set((sampleStudents || []).map(s => s && s.className).filter(Boolean))];
+                const classes = CLASSES.filter(c => present.includes(c)).concat(present.filter(c => !CLASSES.includes(c)));
+                const rows = (classes.length ? classes : CLASSES).map(c => `<tr><td class="fw-bold text-start">${esc(c)}</td>${EXAMS.map(x => {
+                    const on = isLocked(c, x);
+                    return `<td><button type="button" class="btn btn-sm ${on ? 'btn-danger' : 'btn-outline-success'} fw-bold py-0" data-lk="${esc(c)}|${x}">${on ? '🔒' : '🔓'}</button></td>`;
+                }).join('')}</tr>`).join('');
+                el.innerHTML = `
+                    <div class="small text-muted mb-2">🔒 ಲಾಕ್ ಆದ ಅಂಕಗಳನ್ನು ಯಾರೂ (ಮುಖ್ಯಶಿಕ್ಷಕರೂ ಸೇರಿ) ಬದಲಿಸಲು ಸಾಧ್ಯವಿಲ್ಲ. ತಿದ್ದುಪಡಿ ಬೇಕಿದ್ದರೆ ಅದೇ ಬಟನ್ ಒತ್ತಿ 🔓 Unlock ಮಾಡಿ, ತಿದ್ದಿ, ಮತ್ತೆ ಲಾಕ್ ಮಾಡಿ. ಎಲ್ಲಾ ಲಾಕ್/ಅನ್‌ಲಾಕ್ ಬದಲಾವಣೆ ದಾಖಲೆಯಲ್ಲಿ ಉಳಿಯುತ್ತವೆ.</div>
+                    <div class="table-responsive"><table class="table table-sm table-bordered text-center align-middle">
+                        <thead class="table-dark"><tr><th class="text-start">ತರಗತಿ</th>${EXAMS.map(x => `<th>${x.toUpperCase()}</th>`).join('')}</tr>
+                        <tr class="table-light"><td class="small fw-bold text-start">ಎಲ್ಲಾ ತರಗತಿ</td>${EXAMS.map(x => `<td><button type="button" class="btn btn-xs btn-danger py-0 px-1" data-all="${x}|1" title="ಎಲ್ಲಾ ತರಗತಿ ಲಾಕ್">🔒</button> <button type="button" class="btn btn-xs btn-success py-0 px-1" data-all="${x}|0" title="ಎಲ್ಲಾ ತರಗತಿ ಅನ್‌ಲಾಕ್">🔓</button></td>`).join('')}</tr></thead>
+                        <tbody>${rows}</tbody></table></div>`;
+                el.querySelectorAll('[data-lk]').forEach(b => b.onclick = () => { const [c, x] = b.getAttribute('data-lk').split('|'); setLock([c], x, !isLocked(c, x)); });
+                el.querySelectorAll('[data-all]').forEach(b => b.onclick = () => {
+                    const [x, on] = b.getAttribute('data-all').split('|');
+                    const cls = (classes.length ? classes : CLASSES);
+                    if (!confirm(`${cls.length} ತರಗತಿಗಳ ${x.toUpperCase()} ಅಂಕಗಳನ್ನು ${on === '1' ? 'ಲಾಕ್' : 'ಅನ್‌ಲಾಕ್'} ಮಾಡಬೇಕೇ?`)) return;
+                    setLock(cls, x, on === '1');
+                });
+            }
+            async function setLock(classes, exam, on) {
+                const d = dise();
+                const locks = JSON.parse(JSON.stringify(cfg.locks || {}));
+                classes.forEach(c => {
+                    const arr = new Set(locks[c] || []);
+                    if (on) arr.add(exam); else arr.delete(exam);
+                    locks[c] = [...arr];
+                });
+                try {
+                    await window.ksrmsV5?.kick?.();
+                    await cfgRef(d, 'locks').set({ locks, updatedAt: Date.now(), by: deviceLabel() });
+                    cfg.locks = locks;
+                    pushLog([{ s: on ? '🔒 ಅಂಕ ಲಾಕ್' : '🔓 ಅಂಕ ಅನ್‌ಲಾಕ್', c: classes.length > 1 ? `${classes.length} ತರಗತಿಗಳು` : classes[0], f: exam.toUpperCase(), o: '', n: '' }]);
+                    renderLocksTab(); scheduleScan();
+                } catch (e) { alert(permErr(e)); }
+            }
+
+            // ----- ಬದಲಾವಣೆ ದಾಖಲೆ -----
+            let logDocs = [], logLast = null, logFilter = '';
+            async function renderLogTab(reset) {
+                const el = body(); if (!el || hmTab !== 'log') return;
+                if (reset) { logDocs = []; logLast = null; el.innerHTML = '⏳ ಲೋಡ್ ಆಗುತ್ತಿದೆ...'; await flushLog(); }
+                const d = dise();
+                let more = false;
+                try {
+                    let q = db.collection('ksrms_schools').doc(d).collection('change_log').orderBy('atMs', 'desc').limit(25);
+                    if (logLast) q = q.startAfter(logLast);
+                    const qs = await q.get();
+                    qs.forEach(x => logDocs.push(x.data()));
+                    if (qs.docs.length) logLast = qs.docs[qs.docs.length - 1];
+                    more = qs.docs.length === 25;
+                } catch (e) { el.innerHTML = `<div class="text-danger">${esc(permErr(e))}</div>`; return; }
+                const people = [...new Set(logDocs.map(x => x.by))];
+                const fmt = ms => ms ? new Date(ms).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+                const docs = logDocs.filter(x => !logFilter || x.by === logFilter);
+                el.innerHTML = `
+                    <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+                        <select id="lgWho" class="form-select form-select-sm" style="max-width:260px;"><option value="">ಎಲ್ಲರೂ</option>${people.map(p => `<option ${p === logFilter ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="lgRefresh">🔄</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger ms-auto" id="lgClean">🧹 60 ದಿನಕ್ಕಿಂತ ಹಳೆಯದು ಅಳಿಸಿ</button></div>
+                    ${docs.length ? docs.map(x => `
+                        <div class="border rounded mb-2">
+                            <div class="px-2 py-1 ${x.role === 'teacher' ? 'bg-primary' : 'bg-danger'} bg-opacity-10 small d-flex justify-content-between flex-wrap">
+                                <b>${x.role === 'teacher' ? '👩‍🏫' : '🛡️'} ${esc(x.by)}</b><span>📱 ${esc(x.device)} · 🕒 ${fmt(x.fromMs)}${x.fromMs !== x.atMs ? ' – ' + fmt(x.atMs).split(', ')[1] : ''} · ${x.count} ಬದಲಾವಣೆ</span></div>
+                            <div class="px-2 py-1 small" style="max-height:220px;overflow:auto;">${(x.changes || []).map(c => `<div>• <b>${esc(c.s)}</b>${c.c ? ' <span class="text-muted">(' + esc(c.c) + ')</span>' : ''} · ${esc(c.f)}${(c.o || c.n) ? `: <span class="text-danger">${esc(c.o || '—')}</span> → <span class="text-success fw-bold">${esc(c.n || '—')}</span>` : ''}</div>`).join('')}</div>
+                        </div>`).join('') : '<div class="text-muted">ಯಾವುದೇ ದಾಖಲೆ ಇಲ್ಲ. (ಹೊಸ ಆವೃತ್ತಿ ಹಾಕಿದ ನಂತರದ ಬದಲಾವಣೆಗಳು ಮಾತ್ರ ಇಲ್ಲಿ ಕಾಣುತ್ತವೆ.)</div>'}
+                    ${more ? '<div class="text-center"><button type="button" class="btn btn-sm btn-outline-secondary" id="lgMore">⬇️ ಇನ್ನಷ್ಟು</button></div>' : ''}`;
+                el.querySelector('#lgWho').onchange = e => { logFilter = e.target.value; renderLogTab(false); };
+                el.querySelector('#lgRefresh').onclick = () => renderLogTab(true);
+                const m = el.querySelector('#lgMore'); if (m) m.onclick = () => renderLogTab(false);
+                el.querySelector('#lgClean').onclick = async () => {
+                    if (!confirm('60 ದಿನಕ್ಕಿಂತ ಹಳೆಯ ಬದಲಾವಣೆ ದಾಖಲೆಗಳನ್ನು ಅಳಿಸಬೇಕೇ?')) return;
+                    try {
+                        const qs = await db.collection('ksrms_schools').doc(d).collection('change_log').where('atMs', '<', Date.now() - 60 * 864e5).limit(400).get();
+                        const b = db.batch(); qs.forEach(x => b.delete(x.ref)); await b.commit();
+                        alert(`✅ ${qs.size} ದಾಖಲೆ ಅಳಿಸಲಾಗಿದೆ.`); renderLogTab(true);
+                    } catch (e) { alert(permErr(e)); }
+                };
+            }
+
+            // ----- ಸುರಕ್ಷತೆ -----
+            function renderSecurityTab() {
+                const el = body(); if (!el || hmTab !== 'security') return;
+                let dn = ''; try { dn = localStorage.getItem('ksrms_device_name') || ''; } catch (e) {}
+                el.innerHTML = `
+                    <div class="border rounded p-3 mb-3">
+                        <h6 class="fw-bold">🔑 ಮುಖ್ಯ Secret Key ಬದಲಿಸಿ</h6>
+                        <div class="small text-muted mb-2">ಶಾಲೆಯ ಮುಖ್ಯ Key ಬೇರೆ ಶಿಕ್ಷಕರಿಗೂ ಗೊತ್ತಿದ್ದರೆ, ಇಲ್ಲಿ ಹೊಸ Key ಮಾಡಿ ನೀವು ಮಾತ್ರ ಇಟ್ಟುಕೊಳ್ಳಿ. ಶಿಕ್ಷಕರಿಗೆ ಅವರದೇ ಮೊಬೈಲ್ + PIN ಲಾಗಿನ್ ಕೊಡಿ. ಹಳೆಯ Key ಯಿಂದ ಲಾಗಿನ್ ಆಗಿರುವ ಎಲ್ಲಾ ಸಾಧನಗಳು (ಹಂತ-2 Rules ನಂತರ) ತಾನಾಗಿಯೇ ಹೊರಗುಳಿಯುತ್ತವೆ.</div>
+                        <button type="button" class="btn btn-danger btn-sm fw-bold" id="secChangeKey">🔑 ಹೊಸ Secret Key ಮಾಡಿ</button>
+                    </div>
+                    <div class="border rounded p-3">
+                        <h6 class="fw-bold">📱 ಈ ಸಾಧನದ ಹೆಸರು</h6>
+                        <div class="small text-muted mb-2">ಬದಲಾವಣೆ ದಾಖಲೆಯಲ್ಲಿ "ಮುಖ್ಯ ಲಾಗಿನ್" ಜೊತೆ ಈ ಹೆಸರು ಕಾಣುತ್ತದೆ (ಉದಾ: "HM ಮೊಬೈಲ್", "ಕಚೇರಿ ಕಂಪ್ಯೂಟರ್").</div>
+                        <div class="input-group input-group-sm" style="max-width:380px;"><input id="secDev" class="form-control" value="${esc(dn)}" maxlength="30"><button type="button" class="btn btn-primary" id="secDevSave">ಉಳಿಸಿ</button></div>
+                    </div>`;
+                el.querySelector('#secDevSave').onclick = () => { try { localStorage.setItem('ksrms_device_name', el.querySelector('#secDev').value.trim()); } catch (e) {} toast('✅ ಉಳಿಸಲಾಗಿದೆ'); };
+                el.querySelector('#secChangeKey').onclick = changeMainKey;
+            }
+            async function changeMainKey() {
+                const v6 = V6();
+                const d = dise();
+                if (!v6) return alert('ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಲಭ್ಯವಿಲ್ಲ.');
+                const u = v6.auth.currentUser;
+                if (!u || !u.isAnonymous) return alert('ಮೊದಲು Logout ಮಾಡಿ ಮುಖ್ಯ Secret Key ನಿಂದ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ (ಸಂದೇಶದಲ್ಲಿ 🔐 ಬರಬೇಕು).');
+                const key = `KSRMS-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
+                if (!confirm(`ಹೊಸ ಮುಖ್ಯ Secret Key:\n\n${key}\n\nಇದನ್ನು ಬರೆದಿಟ್ಟುಕೊಳ್ಳಿ. ಹಳೆಯ Key ಇನ್ನು ಕೆಲಸ ಮಾಡುವುದಿಲ್ಲ. ಮುಂದುವರಿಯಬೇಕೇ?`)) return;
+                try {
+                    const kn = v6.norm(key);
+                    const b = db.batch();
+                    b.update(db.collection('ksrms_licenses').doc(d), { secretKey: key });
+                    b.set(db.collection('ksrms_secrets').doc(d), { keyNorm: kn, updatedAt: Date.now() });
+                    await b.commit();
+                    await v6.createSession(u.uid, d, kn);
+                    try {
+                        const arr = JSON.parse(localStorage.getItem('ksrms_keys_db') || '[]');
+                        arr.forEach(k => { if (String(k.diseCode) === d) k.secretKey = key; });
+                        localStorage.setItem('ksrms_keys_db', JSON.stringify(arr));
+                    } catch (e) {}
+                    pushLog([{ s: '🔑 ಸುರಕ್ಷತೆ', c: '', f: 'ಮುಖ್ಯ Secret Key ಬದಲಾಯಿಸಲಾಗಿದೆ', o: '', n: '' }]);
+                    alert(`✅ ಹೊಸ ಮುಖ್ಯ Secret Key:\n\n${key}\n\nಇದನ್ನು ಸುರಕ್ಷಿತವಾಗಿ ಬರೆದಿಟ್ಟುಕೊಳ್ಳಿ. ಯಾರಿಗೂ ಹಂಚಿಕೊಳ್ಳಬೇಡಿ.`);
+                } catch (e) { alert(permErr(e)); }
+            }
+
+            // ಮುಖ್ಯ ಲಾಗಿನ್ ಆದಾಗ ಒಮ್ಮೆ ಸಾಧನದ ಹೆಸರು ಕೇಳುವುದು (ಐಚ್ಛಿಕ)
+            if (typeof performSchoolLogin === 'function') {
+                const _hmLogin = performSchoolLogin;
+                performSchoolLogin = async function () {
+                    const r = await _hmLogin.apply(this, arguments);
+                    try {
+                        if (isHM() && !localStorage.getItem('ksrms_device_name') && !localStorage.getItem('ksrms_device_name_asked')) {
+                            localStorage.setItem('ksrms_device_name_asked', '1');
+                            const n = prompt('📱 ಈ ಸಾಧನವನ್ನು ಯಾರು ಬಳಸುತ್ತಾರೆ? (ಉದಾ: "HM ಮೊಬೈಲ್")\nಬದಲಾವಣೆ ದಾಖಲೆಯಲ್ಲಿ ಈ ಹೆಸರು ಕಾಣುತ್ತದೆ.', '');
+                            if (n && n.trim()) localStorage.setItem('ksrms_device_name', n.trim().slice(0, 30));
+                        }
+                    } catch (e) {}
+                    refreshBadge();
+                    return r;
+                };
+            }
+
+            // ಹೆಡರ್‌ನಲ್ಲಿ ಶಿಕ್ಷಕರ ಹೆಸರು
+            if (typeof updateSessionUI === 'function') {
+                const _u = updateSessionUI;
+                updateSessionUI = function () {
+                    const r = _u.apply(this, arguments);
+                    try {
+                        const t = teacher();
+                        const lbl = document.getElementById('activeSchoolInfoLabel');
+                        if (t && lbl) lbl.innerText = `👩‍🏫 ${t.name} — ${sess().schoolName || ''} (${sess().diseCode})`;
+                    } catch (e) {}
+                    refreshBadge();
+                    return r;
+                };
+            }
+
+            setTimeout(() => { const d = dise(); if (d) startCfg(d); refreshBadge(); scheduleScan(); }, 1500);
+            console.log('[KSRMS V8] Teachers, locks & change log active.');
         })();
 
         // ======================================================================
