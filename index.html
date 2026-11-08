@@ -28308,6 +28308,11 @@ function injectBulkStudentEditModalHTML() {
                         const d = await db.collection('ksrms_licenses').doc(dise).get();
                         licReadable = true;
                         if (d.exists) licData = d.data();
+                        if (licData && String(licData.status || '').toUpperCase() === 'SUSPENDED') {
+                            try { await db.collection('ksrms_sessions').doc(user.uid).delete(); } catch (e) {}
+                            alert('⛔ ಈ ಶಾಲೆಯ ಲೈಸೆನ್ಸ್ ತಡೆಹಿಡಿಯಲಾಗಿದೆ. ದಯವಿಟ್ಟು Admin ಅನ್ನು ಸಂಪರ್ಕಿಸಿ.');
+                            return;
+                        }
                     } catch (e) { licReadable = false; }
 
                     if (!secured) {
@@ -28400,7 +28405,7 @@ function injectBulkStudentEditModalHTML() {
                         const k = prompt(`🔐 ಸುರಕ್ಷತಾ ಅಪ್‌ಡೇಟ್\n\n"${schoolName || dise}" ಶಾಲೆಯ ಅಂಕಗಳನ್ನು ಸೇವ್ ಮಾಡಲು, ದಯವಿಟ್ಟು ನಿಮ್ಮ ಶಾಲೆಯ ಪೂರ್ಣ Secret Key ಅನ್ನು ಒಮ್ಮೆ ಮತ್ತೆ ನಮೂದಿಸಿ:`);
                         if (k === null) break;
                         try { await createSession(u.uid, dise, norm(k)); toast6('✅ ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಸಕ್ರಿಯವಾಗಿದೆ.'); return; }
-                        catch (e) { alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ. ಪೂರ್ಣ Key ಅನ್ನು ಸರಿಯಾಗಿ ನಮೂದಿಸಿ.'); }
+                        catch (e) { alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ, ಅಥವಾ ಶಾಲೆಯ ಲೈಸೆನ್ಸ್ ತಡೆಹಿಡಿಯಲಾಗಿದೆ. ಪೂರ್ಣ Key ಅನ್ನು ಸರಿಯಾಗಿ ನಮೂದಿಸಿ / Admin ಸಂಪರ್ಕಿಸಿ.'); }
                     }
                     toast6('⚠️ Secret Key ನಮೂದಿಸದ ಕಾರಣ ಅಂಕಗಳು ಈ ಸಾಧನದಲ್ಲಿ ಮಾತ್ರ ಉಳಿಯುತ್ತವೆ. Logout ಮಾಡಿ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ.');
                 } catch (e) {
@@ -28543,6 +28548,433 @@ function injectBulkStudentEditModalHTML() {
             }
 
             console.log('[KSRMS V6] Secure school login active.');
+        })();
+
+        // ======================================================================
+        // KSRMS V7.0 — ADMIN PANEL ಸುಧಾರಣೆಗಳು
+        // • ✏️ ಶಾಲೆಯ ವಿವರ ಸಂಪಾದನೆ (ಹೆಸರು, ಮೊಬೈಲ್, ಅವಧಿ, ಸ್ಥಿತಿ, Secret Key)
+        // • ⛔ ಶಾಲೆಯನ್ನು ತಡೆಹಿಡಿಯುವುದು (Suspend) ಮತ್ತು 🚪 ಎಲ್ಲಾ ಸಾಧನಗಳಿಂದ Logout
+        // • ☁️ ಯಾವುದೇ ಶಾಲೆಯ ದೈನಂದಿನ ಬ್ಯಾಕಪ್ ನೋಡುವುದು / ಮರುಸ್ಥಾಪಿಸುವುದು
+        // • 🔐 ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಸ್ಥಿತಿ, ಕೊನೆಯ ಸೇವ್ ಸಮಯ, ಅಂಕಗಳ ಸಂಖ್ಯೆ ಕಾಲಂಗಳು
+        // • 📥 ಶಾಲೆಗಳ ಪಟ್ಟಿಯನ್ನು Excel ಗೆ ಡೌನ್‌ಲೋಡ್
+        // • ಪ್ರತಿ ಹುಡುಕಾಟಕ್ಕೂ ಎಲ್ಲಾ ಶಾಲೆಗಳ ಡೇಟಾ ಮತ್ತೆ ಡೌನ್‌ಲೋಡ್ ಆಗದಂತೆ cache (Firebase ಉಚಿತ ಮಿತಿ ಉಳಿತಾಯ)
+        // ======================================================================
+        (function KSRMS_AdminToolsV7() {
+            if (typeof db === 'undefined' || !db) return;
+
+            const esc = v => String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const isAdminNow = () => !!(currentSession && currentSession.isLoggedIn && currentSession.role === 'admin');
+            const DAY = 24 * 60 * 60 * 1000;
+            const TTL = 15 * 60 * 1000;
+            const toMs = v => {
+                if (!v) return 0;
+                if (typeof v === 'number') return v;
+                if (v.toMillis) return v.toMillis();
+                if (v.seconds) return v.seconds * 1000;
+                const d = Date.parse(v); return isNaN(d) ? 0 : d;
+            };
+            const fmtDate = ms => ms ? new Date(ms).toLocaleDateString('en-GB') : '-';
+            const fmtDateTime = ms => ms ? new Date(ms).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+            const isSuspended = k => String(k.status || '').toUpperCase() === 'SUSPENDED';
+
+            function countMarks(students) {
+                let n = 0;
+                const walk = v => {
+                    if (v && typeof v === 'object' && !Array.isArray(v)) Object.keys(v).forEach(x => walk(v[x]));
+                    else if (v !== '' && v !== null && v !== undefined) n++;
+                };
+                (students || []).forEach(s => { if (s) { walk(s.marks); walk(s.hsMarks); } });
+                return n;
+            }
+
+            function getKeys() {
+                let keys = window.allAdminCloudKeys;
+                if (!Array.isArray(keys)) { try { keys = JSON.parse(localStorage.getItem('ksrms_keys_db') || '[]'); } catch (e) { keys = []; } }
+                return keys.filter(k => k && k.diseCode);
+            }
+            function updateLocalKey(dise, changes) {
+                const apply = arr => { const k = arr.find(x => String(x.diseCode) === String(dise)); if (k) Object.assign(k, changes); };
+                if (Array.isArray(window.allAdminCloudKeys)) apply(window.allAdminCloudKeys);
+                try {
+                    const arr = JSON.parse(localStorage.getItem('ksrms_keys_db') || '[]');
+                    apply(arr);
+                    localStorage.setItem('ksrms_keys_db', JSON.stringify(arr));
+                } catch (e) {}
+            }
+
+            // ---------------- ಶಾಲಾ ಅಂಕಿಅಂಶ cache ----------------
+            const stats = {};          // dise → {at, students, marks, saved, err}
+            let sessions = { at: 0, map: {} }; // dise → ಕೊನೆಯ ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಸಮಯ
+            let loading = false;
+
+            async function loadStats(keys, force) {
+                if (loading) return false;
+                const now = Date.now();
+                const need = keys.filter(k => force || !stats[k.diseCode] || now - stats[k.diseCode].at > TTL);
+                const needSessions = force || now - sessions.at > TTL;
+                if (!need.length && !needSessions) return false;
+                loading = true;
+                try {
+                    await Promise.all(need.map(async k => {
+                        const dise = String(k.diseCode);
+                        try {
+                            const d = await db.collection('ksrms_schools').doc(dise).get();
+                            const x = d.exists ? (d.data() || {}) : {};
+                            const list = Array.isArray(x.students) ? x.students : [];
+                            stats[dise] = { at: now, students: list.length, marks: countMarks(list), saved: toMs(x.lastUpdated), backup: x.lastBackupDate || '' };
+                        } catch (e) { stats[dise] = { at: now, err: true }; }
+                    }));
+                    if (needSessions) {
+                        try {
+                            const ss = await db.collection('ksrms_sessions').get();
+                            const map = {};
+                            ss.forEach(d => { const x = d.data() || {}; if (x.dise) map[x.dise] = Math.max(map[x.dise] || 0, Number(x.createdAt) || 1); });
+                            sessions = { at: now, map };
+                        } catch (e) { sessions.at = now; }
+                    }
+                } finally { loading = false; }
+                return true;
+            }
+
+            // ---------------- ಹೊಸ ಶಾಲಾ ಪಟ್ಟಿ (filterAdminKeysTable ಬದಲಿ) ----------------
+            let renderToken = 0;
+            filterAdminKeysTable = async function (forceRefresh) {
+                const tbody = document.getElementById('adminKeysTableBody');
+                if (!tbody) return;
+                const myToken = ++renderToken;
+                const keys = getKeys();
+                const query = (document.getElementById('adminSearchKeyInput')?.value || '').trim().toLowerCase();
+                const expMs = k => toMs(k.expiresAt) || Date.now();
+                const isExpired = k => Date.now() >= expMs(k);
+                const isExpiring = k => { const d = Math.ceil((expMs(k) - Date.now()) / DAY); return d > 0 && d <= 7; };
+
+                // ಅಂಕಿಅಂಶ ಕಾರ್ಡ್‌ಗಳು
+                const activeCount = keys.filter(k => !isExpired(k) && !isSuspended(k)).length;
+                const expiredCount = keys.filter(isExpired).length;
+                const expiringCount = keys.filter(isExpiring).length;
+                const suspendedCount = keys.filter(isSuspended).length;
+                const secureCount = keys.filter(k => sessions.map[k.diseCode]).length;
+                const mode = window.adminTableFilterMode || 'ALL';
+                let cards = document.getElementById('adminRevenueAnalyticsCards');
+                if (!cards) {
+                    cards = document.createElement('div');
+                    cards.id = 'adminRevenueAnalyticsCards';
+                    cards.className = 'row g-2 mb-3';
+                    const tc = document.querySelector('#adminPanelModal .table-responsive');
+                    if (tc) tc.parentNode.insertBefore(cards, tc);
+                }
+                const card = (m, cls, icon, label, val) => `
+                    <div class="col-6 col-md" style="cursor:pointer;" onclick="setAdminTableFilter('${m}')">
+                        <div class="card ${cls} border-0 shadow-sm p-2 text-center ${mode === m ? 'border border-3 border-dark' : ''}">
+                            <small class="fw-bold fs-8">${icon} ${label}</small>
+                            <h5 class="mb-0 fw-bold">${val}</h5>
+                        </div>
+                    </div>`;
+                cards.innerHTML =
+                    card('ALL', 'bg-success text-white', '🏫', 'ಎಲ್ಲಾ ಶಾಲೆಗಳು', `${keys.length} <small class="fs-8">· ₹${(activeCount * 500).toLocaleString('en-IN')}</small>`) +
+                    card('ACTIVE', 'bg-primary text-white', '✅', 'ಸಕ್ರಿಯ', activeCount) +
+                    card('EXPIRING', 'bg-warning text-dark', '⏳', '7 ದಿನ ಬಾಕಿ', expiringCount) +
+                    card('EXPIRED', 'bg-danger text-white', '🔴', 'ಮುಕ್ತಾಯ', expiredCount) +
+                    card('SUSPENDED', 'bg-dark text-white', '⛔', 'ತಡೆಹಿಡಿದ', suspendedCount) +
+                    card('NOSECURE', 'bg-secondary text-white', '🔓', 'ಹೊಸ ಲಾಗಿನ್ ಇಲ್ಲ', keys.length - secureCount) +
+                    `<div class="col-12 d-flex gap-2 flex-wrap justify-content-end">
+                        <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="filterAdminKeysTable(true)">🔄 ತಾಜಾ ಮಾಹಿತಿ</button>
+                        <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="ksrmsAdminExportExcel()">📥 Excel ಗೆ ಪಟ್ಟಿ</button>
+                    </div>`;
+
+                // ಫಿಲ್ಟರ್
+                let list = keys.filter(k => [k.diseCode, k.schoolName, k.mobile, k.secretKey].some(v => String(v || '').toLowerCase().includes(query)));
+                if (mode === 'ACTIVE') list = list.filter(k => !isExpired(k) && !isSuspended(k));
+                else if (mode === 'EXPIRING') list = list.filter(isExpiring);
+                else if (mode === 'EXPIRED') list = list.filter(isExpired);
+                else if (mode === 'SUSPENDED') list = list.filter(isSuspended);
+                else if (mode === 'NOSECURE') list = list.filter(k => !sessions.map[k.diseCode]);
+
+                const table = tbody.closest('table');
+                const thead = table && table.querySelector('thead');
+                if (thead) thead.innerHTML = `<tr class="table-dark text-center fs-8">
+                    <th>DISE Code</th><th>ಶಾಲೆ</th><th>ಮೊಬೈಲ್</th><th>Secret Key</th><th>ಮಕ್ಕಳು / ಅಂಕಗಳು</th>
+                    <th>ಕೊನೆಯ ಸೇವ್</th><th>🔐 ಲಾಗಿನ್</th><th>ಅವಧಿ</th><th>ಕ್ರಮಗಳು</th></tr>`;
+
+                if (!list.length) { tbody.innerHTML = `<tr><td colspan="9" class="text-muted p-3">ಯಾವುದೇ ಶಾಲೆ ದೊರೆಯಲಿಲ್ಲ.</td></tr>`; }
+                else {
+                    tbody.innerHTML = list.map(k => {
+                        const dise = esc(k.diseCode);
+                        const s = stats[k.diseCode];
+                        const exp = expMs(k);
+                        const days = Math.ceil((exp - Date.now()) / DAY);
+                        let expBadge = `<span class="badge bg-success">${fmtDate(exp)}</span>`;
+                        if (days <= 0) expBadge = `<span class="badge bg-danger">🔴 ${fmtDate(exp)}</span>`;
+                        else if (days <= 7) expBadge = `<span class="badge bg-warning text-dark">🟡 ${days} ದಿನ</span>`;
+                        const usage = !s ? '<span class="text-muted">…</span>'
+                            : s.err ? '<span class="text-muted">-</span>'
+                            : `<b class="${s.students ? 'text-primary' : 'text-muted'}">${s.students}</b> ಮಕ್ಕಳು<br><small class="${s.marks ? 'text-success fw-bold' : 'text-muted'}">${s.marks} ಅಂಕಗಳು</small>`;
+                        const saved = s && s.saved ? `<small>${fmtDateTime(s.saved)}</small>` : '<small class="text-muted">-</small>';
+                        const sec = sessions.map[k.diseCode] ? `<span class="badge bg-success" title="ಕೊನೆಯ ಸುರಕ್ಷಿತ ಲಾಗಿನ್: ${fmtDateTime(sessions.map[k.diseCode])}">🔐 ಹೌದು</span>` : '<span class="badge bg-light text-dark border">🔓 ಇಲ್ಲ</span>';
+                        const susp = isSuspended(k) ? ' <span class="badge bg-dark">⛔ ತಡೆಹಿಡಿಯಲಾಗಿದೆ</span>' : '';
+                        const btn = (act, cls, label, title) => `<button type="button" class="btn btn-xs ${cls} fw-bold py-0 px-2 me-1 mb-1" data-act="${act}" data-dise="${dise}" title="${title}">${label}</button>`;
+                        return `<tr>
+                            <td class="fw-bold text-primary">${dise}</td>
+                            <td class="text-start ps-2 fw-semibold">${esc(k.schoolName)}${susp}</td>
+                            <td>${esc(k.mobile || '-')}</td>
+                            <td class="fw-bold text-danger fs-7">${esc(k.secretKey)}</td>
+                            <td class="fs-7">${usage}</td>
+                            <td>${saved}</td>
+                            <td>${sec}</td>
+                            <td>${expBadge}</td>
+                            <td class="text-nowrap">
+                                ${btn('edit', 'btn-primary', '✏️ Edit', 'ಶಾಲೆಯ ವಿವರ ಬದಲಿಸಿ')}
+                                ${btn('wa', (days <= 7 ? 'btn-warning text-dark' : 'btn-outline-secondary'), '🔔', 'WhatsApp Expiry Alert')}
+                                ${btn('renew', 'btn-outline-primary', '🔄', '1 ವರ್ಷ Renew')}
+                                ${btn('backup', 'btn-outline-info text-dark', '☁️', 'ದೈನಂದಿನ ಬ್ಯಾಕಪ್‌ಗಳು')}
+                                ${btn('logout', 'btn-outline-dark', '🚪', 'ಎಲ್ಲಾ ಸಾಧನಗಳಿಂದ Logout')}
+                                ${btn('delete', 'btn-outline-danger', '🗑️', 'ಶಾಲೆ ಅಳಿಸಿ')}
+                            </td></tr>`;
+                    }).join('');
+                }
+
+                if (!tbody._ksrmsV7) {
+                    tbody._ksrmsV7 = true;
+                    tbody.addEventListener('click', e => {
+                        const b = e.target.closest('button[data-act]');
+                        if (!b) return;
+                        e.preventDefault(); e.stopPropagation();
+                        handleAction(b.getAttribute('data-act'), b.getAttribute('data-dise'));
+                    }, true);
+                }
+
+                // ಹಿನ್ನೆಲೆಯಲ್ಲಿ ಮಾಹಿತಿ ತಂದು ಮತ್ತೆ ತೋರಿಸಿ
+                const changed = await loadStats(keys, forceRefresh === true);
+                if (changed && myToken === renderToken) filterAdminKeysTable(false);
+            };
+
+            function handleAction(act, dise) {
+                const k = getKeys().find(x => String(x.diseCode) === String(dise));
+                if (!k) return alert('ಶಾಲೆಯ ದಾಖಲೆ ದೊರೆಯಲಿಲ್ಲ.');
+                if (act === 'edit') return openEdit(k);
+                if (act === 'wa') {
+                    const exp = toMs(k.expiresAt) || Date.now();
+                    const days = Math.ceil((exp - Date.now()) / DAY);
+                    if (typeof sendExpiryReminderWhatsApp === 'function') return sendExpiryReminderWhatsApp(k.diseCode, k.schoolName, k.secretKey, k.mobile, fmtDate(exp), days);
+                    return;
+                }
+                if (act === 'renew') return (typeof renewSchoolLicense === 'function') ? renewSchoolLicense(k.diseCode) : null;
+                if (act === 'backup') return openSchoolBackups(k);
+                if (act === 'logout') {
+                    if (!confirm(`"${k.schoolName}" ಶಾಲೆಯನ್ನು ಎಲ್ಲಾ ಸಾಧನಗಳಿಂದ Logout ಮಾಡಬೇಕೇ?\n\nಆ ಶಾಲೆ ಮತ್ತೆ ಬಳಸಲು Secret Key ಹಾಕಿ ಲಾಗಿನ್ ಆಗಬೇಕಾಗುತ್ತದೆ.\n(ಹಂತ-2 Rules ಹಾಕಿದ ನಂತರ ಮಾತ್ರ ಪೂರ್ಣ ಪರಿಣಾಮ.)`)) return;
+                    return forceLogout(k.diseCode).then(n => { alert(`✅ ${n} ಸಾಧನಗಳಿಂದ Logout ಮಾಡಲಾಗಿದೆ.`); filterAdminKeysTable(true); });
+                }
+                if (act === 'delete') {
+                    if (typeof deleteSchoolByAdmin !== 'function') return;
+                    deleteSchoolByAdmin(k.diseCode);
+                    // ಅಳಿಸಿದ್ದರೆ, ಆ ಶಾಲೆಯ ಸುರಕ್ಷಿತ ಸೆಷನ್‌ಗಳನ್ನೂ ತೆಗೆದುಹಾಕಿ
+                    setTimeout(async () => {
+                        try {
+                            const lic = await db.collection('ksrms_licenses').doc(String(k.diseCode)).get();
+                            if (!lic.exists) { await forceLogout(k.diseCode); if (typeof window.ksrmsSyncSecretsNow === 'function') window.ksrmsSyncSecretsNow(); }
+                        } catch (e) {}
+                    }, 1500);
+                    return;
+                }
+            }
+
+            async function forceLogout(dise) {
+                try {
+                    const qs = await db.collection('ksrms_sessions').where('dise', '==', String(dise)).get();
+                    const refs = []; qs.forEach(d => refs.push(d.ref));
+                    for (let i = 0; i < refs.length; i += 400) {
+                        const b = db.batch(); refs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit();
+                    }
+                    delete sessions.map[dise];
+                    return refs.length;
+                } catch (e) { alert('Logout ವಿಫಲವಾಗಿದೆ: ' + ((e && e.code) || e)); return 0; }
+            }
+
+            // ---------------- ✏️ ಸಂಪಾದನೆ ವಿಂಡೋ ----------------
+            function overlay(id, title, bodyHtml) {
+                const old = document.getElementById(id); if (old) old.remove();
+                const w = document.createElement('div');
+                w.id = id;
+                w.style.cssText = 'position:fixed;inset:0;z-index:100003;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;';
+                w.innerHTML = `<div style="background:#fff;border-radius:10px;max-width:520px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.35);">
+                    <div style="background:#800020;color:#fff;padding:12px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center;">
+                        <span>${title}</span><button type="button" data-close style="background:none;border:0;color:#fff;font-size:22px;line-height:1;cursor:pointer;">×</button>
+                    </div>
+                    <div style="padding:14px 16px;font-size:14px;">${bodyHtml}</div></div>`;
+                document.body.appendChild(w);
+                w.addEventListener('click', e => { if (e.target === w || e.target.hasAttribute('data-close')) w.remove(); });
+                return w;
+            }
+            const newKey = () => `KSRMS-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
+            const dateInput = ms => { const d = new Date(ms || Date.now()); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+            function openEdit(k) {
+                const w = overlay('ksrmsEditSchool', `✏️ ಶಾಲೆಯ ವಿವರ — ${esc(k.diseCode)}`, `
+                    <label class="form-label fw-bold mb-1">ಶಾಲೆಯ ಹೆಸರು</label>
+                    <input id="esName" class="form-control mb-2" value="${esc(k.schoolName)}">
+                    <label class="form-label fw-bold mb-1">ನೋಂದಾಯಿತ ಮೊಬೈಲ್ (10 ಅಂಕೆ)</label>
+                    <input id="esMobile" class="form-control mb-2" inputmode="numeric" maxlength="10" value="${esc(k.mobile)}">
+                    <label class="form-label fw-bold mb-1">ಲೈಸೆನ್ಸ್ ಅವಧಿ ಮುಕ್ತಾಯ ದಿನಾಂಕ</label>
+                    <div class="d-flex gap-2 mb-2">
+                        <input id="esExpiry" type="date" class="form-control" value="${dateInput(toMs(k.expiresAt))}">
+                        <button type="button" id="esPlusYear" class="btn btn-outline-primary btn-sm text-nowrap">+1 ವರ್ಷ</button>
+                    </div>
+                    <label class="form-label fw-bold mb-1">ಸ್ಥಿತಿ</label>
+                    <select id="esStatus" class="form-select mb-2">
+                        <option value="ACTIVE" ${!isSuspended(k) ? 'selected' : ''}>✅ ಸಕ್ರಿಯ (ACTIVE)</option>
+                        <option value="SUSPENDED" ${isSuspended(k) ? 'selected' : ''}>⛔ ತಡೆಹಿಡಿಯಲಾಗಿದೆ (SUSPENDED) — ಲಾಗಿನ್ ಆಗಲು ಸಾಧ್ಯವಿಲ್ಲ</option>
+                    </select>
+                    <label class="form-label fw-bold mb-1">Secret Key</label>
+                    <div class="d-flex gap-2 mb-1">
+                        <input id="esKey" class="form-control fw-bold text-danger" value="${esc(k.secretKey)}">
+                        <button type="button" id="esNewKey" class="btn btn-outline-danger btn-sm text-nowrap">🔑 ಹೊಸ Key</button>
+                    </div>
+                    <small class="text-muted d-block mb-3">Key ಬದಲಿಸಿದರೆ ಆ ಶಾಲೆಯ ಎಲ್ಲಾ ಸಾಧನಗಳು Logout ಆಗುತ್ತವೆ; ಹೊಸ Key ಅನ್ನು ಶಾಲೆಗೆ ತಿಳಿಸಿ.</small>
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button type="button" class="btn btn-secondary" data-close>ರದ್ದು</button>
+                        <button type="button" id="esSave" class="btn btn-success fw-bold">💾 ಉಳಿಸಿ</button>
+                    </div>`);
+                w.querySelector('#esNewKey').onclick = () => { w.querySelector('#esKey').value = newKey(); };
+                w.querySelector('#esPlusYear').onclick = () => {
+                    const cur = Date.parse(w.querySelector('#esExpiry').value) || Date.now();
+                    w.querySelector('#esExpiry').value = dateInput(Math.max(cur, Date.now()) + 365 * DAY);
+                };
+                w.querySelector('#esSave').onclick = async () => {
+                    const name = w.querySelector('#esName').value.trim();
+                    const mobile = w.querySelector('#esMobile').value.replace(/\D/g, '');
+                    const expStr = w.querySelector('#esExpiry').value;
+                    const status = w.querySelector('#esStatus').value;
+                    const key = w.querySelector('#esKey').value.trim().toUpperCase();
+                    if (!name) return alert('ಶಾಲೆಯ ಹೆಸರು ಹಾಕಿ.');
+                    if (!/^\d{10}$/.test(mobile)) return alert('ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ನಿಖರವಾಗಿ 10 ಅಂಕೆ ಇರಬೇಕು.');
+                    if (!expStr) return alert('ಮುಕ್ತಾಯ ದಿನಾಂಕ ಆಯ್ಕೆಮಾಡಿ.');
+                    if (key.replace(/[^A-Z0-9]/g, '').length < 8) return alert('Secret Key ತುಂಬಾ ಚಿಕ್ಕದಾಗಿದೆ.');
+                    const expiresAt = new Date(expStr + 'T23:59:59').getTime();
+                    const keyChanged = key !== String(k.secretKey || '').toUpperCase();
+                    const suspendNow = status === 'SUSPENDED' && !isSuspended(k);
+
+                    if (keyChanged) {
+                        try {
+                            const others = getKeys().filter(x => String(x.diseCode) !== String(k.diseCode) && String(x.secretKey || '').toUpperCase() === key);
+                            if (others.length) return alert('ಈ Key ಬೇರೆ ಶಾಲೆಗೆ ಈಗಾಗಲೇ ಇದೆ. ಬೇರೆ Key ಬಳಸಿ.');
+                        } catch (e) {}
+                    }
+                    let msg = `"${name}" ಶಾಲೆಯ ವಿವರ ಉಳಿಸಬೇಕೇ?`;
+                    if (keyChanged) msg += `\n\n🔑 ಹೊಸ Secret Key: ${key}\n(ಹಳೆಯ Key ಇನ್ನು ಕೆಲಸ ಮಾಡುವುದಿಲ್ಲ; ಎಲ್ಲಾ ಸಾಧನಗಳು Logout ಆಗುತ್ತವೆ)`;
+                    if (suspendNow) msg += `\n\n⛔ ಈ ಶಾಲೆ ಲಾಗಿನ್ ಆಗಲು ಸಾಧ್ಯವಾಗುವುದಿಲ್ಲ; ಎಲ್ಲಾ ಸಾಧನಗಳು Logout ಆಗುತ್ತವೆ.`;
+                    if (!confirm(msg)) return;
+
+                    const btn = w.querySelector('#esSave'); btn.disabled = true; btn.textContent = '⏳ ಉಳಿಸಲಾಗುತ್ತಿದೆ...';
+                    const changes = { schoolName: name, mobile, expiresAt, status, secretKey: key };
+                    try {
+                        await db.collection('ksrms_licenses').doc(String(k.diseCode)).update(changes);
+                        updateLocalKey(k.diseCode, changes);
+                        if (keyChanged && typeof window.ksrmsSyncSecretsNow === 'function') { try { await window.ksrmsSyncSecretsNow(); } catch (e) {} }
+                        let loggedOut = 0;
+                        if (keyChanged || suspendNow) loggedOut = await forceLogout(k.diseCode);
+                        w.remove();
+                        alert(`✅ ಉಳಿಸಲಾಗಿದೆ.${loggedOut ? `\n${loggedOut} ಸಾಧನಗಳಿಂದ Logout ಮಾಡಲಾಗಿದೆ.` : ''}${keyChanged ? `\n\nಹೊಸ Secret Key: ${key}` : ''}`);
+                        filterAdminKeysTable(false);
+                    } catch (e) {
+                        btn.disabled = false; btn.textContent = '💾 ಉಳಿಸಿ';
+                        alert('ಉಳಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ: ' + ((e && e.code) || e));
+                    }
+                };
+            }
+
+            // ---------------- ☁️ ಯಾವುದೇ ಶಾಲೆಯ ಬ್ಯಾಕಪ್ (Admin) ----------------
+            async function openSchoolBackups(k) {
+                const dise = String(k.diseCode);
+                const w = overlay('ksrmsAdminBackups', `☁️ ಬ್ಯಾಕಪ್‌ಗಳು — ${esc(k.schoolName)}`, '<div id="abBody">⏳ ಲೋಡ್ ಆಗುತ್ತಿದೆ...</div>');
+                const body = w.querySelector('#abBody');
+                try {
+                    const qs = await db.collection('ksrms_schools').doc(dise).collection('daily_backups').get();
+                    const list = [];
+                    qs.forEach(d => { const x = d.data() || {}; list.push({ id: d.id, createdAt: x.createdAt || 0, date: x.date || '', label: x.label || 'auto', studentCount: x.studentCount || 0, marksCount: x.marksCount || 0 }); });
+                    list.sort((a, b) => b.createdAt - a.createdAt);
+                    const s = stats[dise];
+                    let html = s && !s.err ? `<div style="background:#f1f5f9;border-radius:6px;padding:8px 10px;margin-bottom:10px;">ಈಗಿನ ಕ್ಲೌಡ್ ಡೇಟಾ: <b>${s.students}</b> ಮಕ್ಕಳು, <b>${s.marks}</b> ಅಂಕಗಳು</div>` : '';
+                    if (!list.length) html += '<div class="text-muted">ಈ ಶಾಲೆಗೆ ಇನ್ನೂ ಯಾವುದೇ ಬ್ಯಾಕಪ್ ಇಲ್ಲ (ಶಾಲೆ ಹೊಸ ಆವೃತ್ತಿಯನ್ನು ತೆರೆದ ದಿನದಿಂದ ಶುರುವಾಗುತ್ತದೆ).</div>';
+                    list.forEach(b => {
+                        const tag = b.label === 'before_restore' ? ' <span class="badge bg-warning text-dark">ಮರುಸ್ಥಾಪನೆಗೆ ಮುಂಚಿನ ಪ್ರತಿ</span>' : '';
+                        html += `<div style="border:1px solid #dee2e6;border-radius:8px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+                            <div><div class="fw-bold">📅 ${fmtDateTime(b.createdAt) || esc(b.date)}${tag}</div>
+                            <div class="text-muted small">${b.studentCount} ಮಕ್ಕಳು · ${b.marksCount} ಅಂಕಗಳು</div></div>
+                            <button type="button" class="btn btn-sm btn-outline-danger fw-bold" data-restore="${esc(b.id)}">ಈ ದಿನಕ್ಕೆ ಮರುಸ್ಥಾಪಿಸಿ</button></div>`;
+                    });
+                    body.innerHTML = html;
+                    body.querySelectorAll('button[data-restore]').forEach(btn => { btn.onclick = () => adminRestore(k, btn.getAttribute('data-restore'), w); });
+                } catch (e) {
+                    body.innerHTML = `<div class="text-danger">ಬ್ಯಾಕಪ್‌ಗಳನ್ನು ತೆರೆಯಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ (${esc((e && e.code) || 'error')}).</div>`;
+                }
+            }
+
+            async function adminRestore(k, slotId, w) {
+                const dise = String(k.diseCode);
+                const ref = db.collection('ksrms_schools').doc(dise);
+                try {
+                    const bs = await ref.collection('daily_backups').doc(slotId).get();
+                    if (!bs.exists) return alert('ಈ ಬ್ಯಾಕಪ್ ದೊರೆಯಲಿಲ್ಲ.');
+                    const b = bs.data();
+                    if (!confirm(`"${k.schoolName}" ಶಾಲೆಯ ಡೇಟಾವನ್ನು ${fmtDateTime(b.createdAt) || b.date} ದಿನದ ಬ್ಯಾಕಪ್‌ಗೆ ಮರುಸ್ಥಾಪಿಸಬೇಕೇ?\n\n• ${b.studentCount || 0} ಮಕ್ಕಳು, ${b.marksCount || 0} ಅಂಕಗಳು\n• ಈಗಿನ ಡೇಟಾದ ಪ್ರತಿ ಮೊದಲು ಉಳಿಸಲಾಗುತ್ತದೆ`)) return;
+                    const cur = await ref.get();
+                    if (cur.exists) {
+                        const c = cur.data() || {};
+                        const students = Array.isArray(c.students) ? c.students : [];
+                        if (students.length) {
+                            await ref.collection('daily_backups').doc('before_restore').set({
+                                date: dateInput(Date.now()), label: 'before_restore', createdAt: Date.now(),
+                                academicYear: (c.appSettings && c.appSettings.academicYear) || '',
+                                studentCount: students.length, marksCount: countMarks(students),
+                                students, appSettings: c.appSettings || {}, classTeachersMap: c.classTeachersMap || {}, subjectMasterList: c.subjectMasterList || []
+                            });
+                        }
+                    }
+                    await db.runTransaction(async tx => {
+                        const snap = await tx.get(ref);
+                        const c = snap.exists ? (snap.data() || {}) : {};
+                        const students = Array.isArray(b.students) ? b.students : [];
+                        const payload = {
+                            students,
+                            appSettings: b.appSettings || c.appSettings || {},
+                            classTeachersMap: b.classTeachersMap || c.classTeachersMap || {},
+                            subjectMasterList: b.subjectMasterList || c.subjectMasterList || [],
+                            studentCount: students.length,
+                            ksrmsRev: (Number(c.ksrmsRev) || 0) + 1,
+                            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        if (snap.exists) tx.update(ref, payload); else tx.set(ref, payload);
+                    });
+                    delete stats[dise];
+                    if (w) w.remove();
+                    alert(`✅ "${k.schoolName}" ಶಾಲೆಯ ಡೇಟಾ ಮರುಸ್ಥಾಪಿಸಲಾಗಿದೆ. ಶಾಲೆಯ ಸಾಧನಗಳಲ್ಲಿ ತಾನಾಗಿಯೇ ಕಾಣಿಸುತ್ತದೆ.`);
+                    filterAdminKeysTable(false);
+                } catch (e) {
+                    alert('ಮರುಸ್ಥಾಪನೆ ವಿಫಲವಾಗಿದೆ: ' + ((e && e.code) || e));
+                }
+            }
+
+            // ---------------- 📥 Excel ----------------
+            window.ksrmsAdminExportExcel = function () {
+                if (typeof XLSX === 'undefined') return alert('Excel ಸೌಲಭ್ಯ ಲೋಡ್ ಆಗಿಲ್ಲ.');
+                const rows = getKeys().map(k => {
+                    const s = stats[k.diseCode] || {};
+                    return {
+                        'DISE Code': k.diseCode, 'ಶಾಲೆ': k.schoolName || '', 'ಮೊಬೈಲ್': k.mobile || '', 'Secret Key': k.secretKey || '',
+                        'ಸ್ಥಿತಿ': isSuspended(k) ? 'SUSPENDED' : 'ACTIVE', 'ಅವಧಿ ಮುಕ್ತಾಯ': fmtDate(toMs(k.expiresAt)),
+                        'ಮಕ್ಕಳು': s.students ?? '', 'ಅಂಕಗಳು': s.marks ?? '', 'ಕೊನೆಯ ಸೇವ್': s.saved ? fmtDateTime(s.saved) : '',
+                        'ಹೊಸ ಲಾಗಿನ್': sessions.map[k.diseCode] ? 'ಹೌದು' : 'ಇಲ್ಲ'
+                    };
+                });
+                const ws = XLSX.utils.json_to_sheet(rows);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Schools');
+                XLSX.writeFile(wb, `KSRMS_Schools_${dateInput(Date.now())}.xlsx`);
+            };
+
+            window.setAdminTableFilter = function (m) { window.adminTableFilterMode = m; filterAdminKeysTable(false); };
+
+            console.log('[KSRMS V7] Admin tools active.');
         })();
 
         // ======================================================================
