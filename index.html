@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KSRMS V3.2 – Comprehensive Karnataka School CCE & High School Result System</title>
+    <!-- App (PWA) -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#800020">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="KSRMS">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -28534,6 +28543,59 @@ function injectBulkStudentEditModalHTML() {
             }
 
             console.log('[KSRMS V6] Secure school login active.');
+        })();
+
+        // ======================================================================
+        // KSRMS APP (PWA) — ಮೊಬೈಲ್/ಕಂಪ್ಯೂಟರ್‌ನಲ್ಲಿ App ಆಗಿ Install ಮಾಡುವ ಸೌಲಭ್ಯ
+        // ======================================================================
+        (function KSRMS_InstallableApp() {
+            if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('sw.js').catch(e => console.warn('[KSRMS App] SW', e));
+                });
+            }
+            const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            let deferred = null;
+            const dismissedKey = 'ksrms_app_install_dismissed';
+
+            function showBar() {
+                if (isStandalone() || document.getElementById('ksrmsInstallBar')) return;
+                let dismissed = 0; try { dismissed = Number(localStorage.getItem(dismissedKey) || 0); } catch (e) {}
+                if (Date.now() - dismissed < 7 * 24 * 3600 * 1000) return; // "ಬೇಡ" ಎಂದರೆ 7 ದಿನ ಕೇಳುವುದಿಲ್ಲ
+                const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+                if (!deferred && !isIOS) return;
+                const bar = document.createElement('div');
+                bar.id = 'ksrmsInstallBar';
+                bar.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:99998;background:#800020;color:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.3);font-size:13px;max-width:320px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+                bar.innerHTML = isIOS && !deferred
+                    ? '📲 App ಆಗಿ ಬಳಸಲು: Safari ಯ <b>Share ⬆️</b> → <b>Add to Home Screen</b> ಒತ್ತಿ. <button type="button" id="ksrmsInstNo" class="btn btn-sm btn-outline-light py-0">ಸರಿ</button>'
+                    : '<span>📲 KSRMS ಅನ್ನು App ಆಗಿ Install ಮಾಡಿ</span><button type="button" id="ksrmsInstYes" class="btn btn-sm btn-warning fw-bold py-0">Install</button><button type="button" id="ksrmsInstNo" class="btn btn-sm btn-outline-light py-0">ಬೇಡ</button>';
+                document.body.appendChild(bar);
+                const yes = document.getElementById('ksrmsInstYes');
+                if (yes) yes.onclick = async () => {
+                    bar.remove();
+                    if (!deferred) return;
+                    deferred.prompt();
+                    try { await deferred.userChoice; } catch (e) {}
+                    deferred = null;
+                };
+                document.getElementById('ksrmsInstNo').onclick = () => {
+                    bar.remove();
+                    try { localStorage.setItem(dismissedKey, String(Date.now())); } catch (e) {}
+                };
+            }
+
+            window.addEventListener('beforeinstallprompt', e => {
+                e.preventDefault();
+                deferred = e;
+                setTimeout(showBar, 4000);
+            });
+            window.addEventListener('appinstalled', () => {
+                const b = document.getElementById('ksrmsInstallBar'); if (b) b.remove();
+                deferred = null;
+            });
+            if (/iphone|ipad|ipod/i.test(navigator.userAgent)) setTimeout(showBar, 6000);
+            window.ksrmsInstallApp = () => { if (deferred) { deferred.prompt(); } else { try { localStorage.removeItem(dismissedKey); } catch (e) {} showBar(); } };
         })();
 
     </script>
