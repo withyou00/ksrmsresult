@@ -29831,7 +29831,9 @@ function injectBulkStudentEditModalHTML() {
             const isAdminNow = () => !!(sess().isLoggedIn && sess().role === 'admin');
             const genOrderId = () => { const a = new Uint8Array(12); (window.crypto || window.msCrypto).getRandomValues(a); return 'O' + Date.now().toString(36).toUpperCase() + Array.from(a, b => (b % 36).toString(36)).join('').toUpperCase(); };
             const addMonths = (ms, n) => { const d = new Date(ms); d.setMonth(d.getMonth() + n); d.setHours(23, 59, 59, 0); return d.getTime(); };
-            const normRef = v => { v = String(v || '').trim().toUpperCase(); if (/^[6-9]\d{9}$/.test(v)) return 'T' + v; return v.replace(/[^A-Z0-9]/g, ''); };
+            const normRef = v => String(v || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            // ಊಹಿಸಲಾಗದ ಖಾಸಗಿ Referral ಕೋಡ್ (ಉದಾ: KS7QX2MP) — ಮಾಲೀಕರಿಗೆ ಮಾತ್ರ ಕಾಣುತ್ತದೆ
+            const genRefCode = () => { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const r = new Uint8Array(6); crypto.getRandomValues(r); return 'KS' + Array.from(r, x => A[x % A.length]).join(''); };
 
             // ---------------- Store ಸಂರಚನೆ (Admin ಬದಲಿಸಬಹುದು) ----------------
             const DEFAULTS = {
@@ -29975,7 +29977,7 @@ function injectBulkStudentEditModalHTML() {
             async function openStore() {
                 const w = overlay('ksrmsStore', '🛒 KSRMS ಖರೀದಿ / Renew', '<div class="text-center p-4">⏳ ಲೋಡ್ ಆಗುತ್ತಿದೆ...</div>');
                 await loadStore();
-                Object.assign(cart, { type: 'school', years: 1, kind: 'new', currentExpiry: 0, licenseId: '', referralCode: '', referralValid: false, referralName: '' });
+                Object.assign(cart, { type: 'school', years: 1, kind: 'new', currentExpiry: 0, licenseId: '', referralCode: '', referralValid: false, referralName: '', myRefCode: '' });
                 if (isOwner()) {
                     cart.kind = 'renew';
                     cart.type = isPack() ? 'teacher' : 'school';
@@ -29983,7 +29985,7 @@ function injectBulkStudentEditModalHTML() {
                     cart.currentExpiry = Number(sess().expiresAt) || 0;
                     try {
                         const d = await db.collection('ksrms_licenses').doc(cart.licenseId).get();
-                        if (d.exists) { cart.currentExpiry = toMs(d.data().expiresAt); try { currentSession.expiresAt = cart.currentExpiry; localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession)); } catch (e) {} }
+                        if (d.exists) { cart.myRefCode = d.data().refCode || ''; cart.currentExpiry = toMs(d.data().expiresAt); try { currentSession.expiresAt = cart.currentExpiry; localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession)); } catch (e) {} }
                     } catch (e) {}
                 }
                 renderStore(w);
@@ -30012,7 +30014,8 @@ function injectBulkStudentEditModalHTML() {
                         <div class="small">ಈಗಿನ ಅವಧಿ ಮುಕ್ತಾಯ: <b>${fmtD(cart.currentExpiry)}</b> ${cart.currentExpiry ? (left > 0 ? `<span class="badge bg-success">${left} ದಿನ ಬಾಕಿ</span>` : '<span class="badge bg-danger">ಮುಗಿದಿದೆ</span>') : ''}</div>
                         <div class="small text-muted mt-1">ಬೇರೆ ಶಾಲೆ/ಶಿಕ್ಷಕರಿಗೆ ಹೊಸದಾಗಿ ಖರೀದಿಸಬೇಕಿದ್ದರೆ <a href="#" id="stNewInstead">ಇಲ್ಲಿ ಒತ್ತಿ</a>.</div></div>
                         <div class="border rounded p-2 mb-3" style="background:#fff8e1;">
-                            <div class="fw-bold">🎁 ನಿಮ್ಮ Referral Code: <span class="text-danger fs-5">${esc(cart.licenseId)}</span></div>
+                            <div class="fw-bold">🎁 ನಿಮ್ಮ Referral Code: ${cart.myRefCode ? `<span class="text-danger fs-5" style="letter-spacing:1px;">${esc(cart.myRefCode)}</span>` : '<span class="text-muted small">ಸಿದ್ಧವಾಗುತ್ತಿದೆ — ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ನೋಡಿ</span>'}</div>
+                            <div class="small text-muted">ಈ ಕೋಡ್ ನಿಮಗೆ ಮಾತ್ರ ಕಾಣುತ್ತದೆ. ನೀವು ಹಂಚಿಕೊಂಡವರು ಮಾತ್ರ ಬಳಸಬಹುದು.</div>
                             <div class="small">ಈ ಕೋಡ್ ಬಳಸಿ ಹೊಸ ಶಾಲೆ/ಶಿಕ್ಷಕರು ಖರೀದಿಸಿದರೆ ಅವರಿಗೆ ₹${S.referralOff} ರಿಯಾಯಿತಿ, ನಿಮಗೆ ${S.referralBonusMonths} ತಿಂಗಳು ಉಚಿತ ಅವಧಿ ತಾನಾಗಿಯೇ ಸೇರುತ್ತದೆ.</div>
                             <button type="button" class="btn btn-sm btn-success mt-1" id="stShareRef">📲 WhatsApp ನಲ್ಲಿ ಹಂಚಿಕೊಳ್ಳಿ</button></div>
                         <div class="mb-3"><button type="button" class="btn btn-sm btn-outline-dark" id="stChangePw">🔑 ನನ್ನ ಲಾಗಿನ್ ಪಾಸ್‌ವರ್ಡ್ ಬದಲಿಸಿ</button></div>`;
@@ -30069,7 +30072,7 @@ function injectBulkStudentEditModalHTML() {
                             <div class="small text-muted mt-1">ಗರಿಷ್ಠ ${S.teacherMaxStudents} ಮಕ್ಕಳು. ವಿಷಯ ತರಗತಿಗಳಲ್ಲಿ ನಿಮ್ಮ ವಿಷಯದ ಅಂಕ ವಹಿ, ಫಲಿತಾಂಶ ವಿಶ್ಲೇಷಣೆ ಪ್ರಿಂಟ್ ಮಾಡಬಹುದು.</div></div>`;
                     }
                     html += `<div class="mb-2"><label class="form-label small fw-bold mb-0">🎁 Referral Code (ಇದ್ದರೆ)</label>
-                        <div class="input-group input-group-sm" style="max-width:360px;"><input id="stRef" class="form-control text-uppercase" value="${esc(cart.referralCode)}" placeholder="DISE / ಮೊಬೈಲ್"><button type="button" class="btn btn-outline-success" id="stRefCheck">ಪರಿಶೀಲಿಸಿ</button></div>
+                        <div class="input-group input-group-sm" style="max-width:360px;"><input id="stRef" class="form-control text-uppercase" value="${esc(cart.referralCode)}" placeholder="ಉದಾ: KS7QX2MP"><button type="button" class="btn btn-outline-success" id="stRefCheck">ಪರಿಶೀಲಿಸಿ</button></div>
                         <div id="stRefMsg" class="small mt-1">${cart.referralCode ? (cart.referralValid ? `<span class="text-success">✅ ${esc(cart.referralName)} — ₹${S.referralOff} ರಿಯಾಯಿತಿ</span>` : '<span class="text-danger">❌ ಈ ಕೋಡ್ ಮಾನ್ಯವಲ್ಲ</span>') : ''}</div></div>`;
                 }
 
@@ -30106,8 +30109,9 @@ function injectBulkStudentEditModalHTML() {
                 const cp = body.querySelector('#stChangePw'); if (cp) cp.onclick = () => window.ksrmsChangePassword();
                 const ni = body.querySelector('#stNewInstead'); if (ni) ni.onclick = e => { e.preventDefault(); cart.kind = 'new'; cart.type = 'school'; cart.licenseId = ''; cart.currentExpiry = 0; renderStore(w); };
                 const sr = body.querySelector('#stShareRef'); if (sr) sr.onclick = () => {
+                    if (!cart.myRefCode) return alert('ನಿಮ್ಮ Referral Code ಇನ್ನೂ ಸಿದ್ಧವಾಗಿಲ್ಲ. ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಪ್ರಯತ್ನಿಸಿ.');
                     const link = location.href.split('#')[0].split('?')[0];
-                    const msg = `ನಮಸ್ಕಾರ 🙏\nಶಾಲೆಯ ಅಂಕ ನಮೂದು, ಪ್ರಗತಿ ಪತ್ರ, ಫಲಿತಾಂಶ ವಿಶ್ಲೇಷಣೆಗೆ ನಾವು KSRMS ಬಳಸುತ್ತಿದ್ದೇವೆ — ತುಂಬಾ ಸುಲಭ.\n\n${link}\n\nಖರೀದಿಸುವಾಗ ನನ್ನ Referral Code *${cart.licenseId}* ಹಾಕಿದರೆ ನಿಮಗೆ ₹${S.referralOff} ರಿಯಾಯಿತಿ ಸಿಗುತ್ತದೆ.`;
+                    const msg = `ನಮಸ್ಕಾರ 🙏\nಶಾಲೆಯ ಅಂಕ ನಮೂದು, ಪ್ರಗತಿ ಪತ್ರ, ಫಲಿತಾಂಶ ವಿಶ್ಲೇಷಣೆಗೆ ನಾವು KSRMS ಬಳಸುತ್ತಿದ್ದೇವೆ — ತುಂಬಾ ಸುಲಭ.\n\n${link}\n\nಖರೀದಿಸುವಾಗ ನನ್ನ Referral Code *${cart.myRefCode}* ಹಾಕಿದರೆ ನಿಮಗೆ ₹${S.referralOff} ರಿಯಾಯಿತಿ ಸಿಗುತ್ತದೆ.`;
                     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
                 };
                 const rc = body.querySelector('#stRefCheck');
@@ -30117,7 +30121,7 @@ function injectBulkStudentEditModalHTML() {
                     if (code) {
                         try {
                             const d = await db.collection('ksrms_refcodes').doc(code).get();
-                            if (d.exists) { cart.referralValid = true; cart.referralName = (d.data() || {}).name || code; }
+                            if (d.exists) { cart.referralValid = true; cart.referralName = (d.data() || {}).name || code; cart.referralOwner = (d.data() || {}).licenseId || ''; }
                         } catch (e) {}
                     }
                     rerender();
@@ -30154,7 +30158,7 @@ function injectBulkStudentEditModalHTML() {
                         cart.referralCode = normRef(v.stRef || '');
                         if (cart.referralCode && !cart.referralValid) { cart.referralCode = ''; }
                         const licenseId = cart.type === 'school' ? dise : 'T' + mob;
-                        if (cart.referralCode && cart.referralCode === licenseId) { cart.referralCode = ''; cart.referralValid = false; }
+                        if (cart.referralCode && (cart.referralCode === licenseId || cart.referralOwner === licenseId)) { cart.referralCode = ''; cart.referralValid = false; }
                         Object.assign(o, { licenseId, dise, schoolName: v.stSchool.trim(), personName: v.stPerson.trim(), mobile: mob, taluk: v.stTaluk.trim(), district: v.stDistrict.trim(), teacher });
                         try { o.passHash = await window.ksrmsPassHash(licenseId, v.stPw); }
                         catch (e) { return alert('ಈ browser ನಲ್ಲಿ ಸುರಕ್ಷಿತ ಪಾಸ್‌ವರ್ಡ್ ಸಾಧ್ಯವಿಲ್ಲ. Chrome ನ ಹೊಸ ಆವೃತ್ತಿ ಬಳಸಿ.'); }
@@ -30356,15 +30360,27 @@ function injectBulkStudentEditModalHTML() {
                 refSynced = Date.now();
                 try {
                     const [lic, refs] = await Promise.all([db.collection('ksrms_licenses').get(), db.collection('ksrms_refcodes').get()]);
-                    const have = new Set(); refs.forEach(d => have.add(d.id));
-                    const b = db.batch(); let n = 0;
+                    const refDocs = {}; refs.forEach(d => { refDocs[d.id] = d.data() || {}; });
+                    const valid = new Set();
+                    const ops = [];
                     lic.forEach(d => {
-                        if (have.has(d.id) || n >= 450) return;
                         const x = d.data() || {};
-                        b.set(db.collection('ksrms_refcodes').doc(d.id), { name: (x.plan === 'teacher' ? (x.teacherName || '') + ', ' : '') + (x.schoolName || d.id) });
-                        n++;
+                        const name = (x.plan === 'teacher' ? (x.teacherName || '') + ', ' : '') + (x.schoolName || d.id);
+                        let code = x.refCode;
+                        if (!code || refDocs[code] && refDocs[code].licenseId && refDocs[code].licenseId !== d.id) {
+                            do { code = genRefCode(); } while (refDocs[code]);
+                            refDocs[code] = { licenseId: d.id };
+                            ops.push(b => b.update(db.collection('ksrms_licenses').doc(d.id), { refCode: code }));
+                        }
+                        valid.add(code);
+                        if (!refDocs[code] || refDocs[code].licenseId !== d.id || refDocs[code].name !== name || !refs.docs.some(z => z.id === code))
+                            ops.push(b => b.set(db.collection('ksrms_refcodes').doc(code), { name, licenseId: d.id }));
                     });
-                    if (n) await b.commit();
+                    // ಹಳೆಯ (DISE ಆಧಾರಿತ, ಊಹಿಸಬಹುದಾದ) ಕೋಡ್‌ಗಳನ್ನು ತೆಗೆದುಹಾಕಿ
+                    refs.forEach(d => { if (!valid.has(d.id)) ops.push(b => b.delete(d.ref)); });
+                    for (let i = 0; i < ops.length; i += 400) {
+                        const b = db.batch(); ops.slice(i, i + 400).forEach(f => f(b)); await b.commit();
+                    }
                 } catch (e) { console.warn('[KSRMS V9] refcodes', e && e.code); }
             }
 
@@ -30385,7 +30401,7 @@ function injectBulkStudentEditModalHTML() {
                         let lic = null;
                         try { const d = await db.collection('ksrms_licenses').doc(String(x.licenseId)).get(); if (d.exists) lic = d.data(); } catch (e) {}
                         let refOk = false;
-                        if (x.referralCode) { try { refOk = (await db.collection('ksrms_refcodes').doc(x.referralCode).get()).exists; } catch (e) {} }
+                        if (x.referralCode) { try { const rc = await db.collection('ksrms_refcodes').doc(x.referralCode).get(); refOk = rc.exists && !!(rc.data() || {}).licenseId && (rc.data() || {}).licenseId !== x.licenseId; } catch (e) {} }
                         const exp = price({ type: x.type, years: x.years, kind: x.kind, currentExpiry: x.kind === 'renew' && lic ? toMs(lic.expiresAt) : 0, referralValid: refOk, referralCode: x.referralCode });
                         const mismatch = exp.total !== (x.pricing && x.pricing.total);
                         const t = x.teacher;
@@ -30448,6 +30464,7 @@ function injectBulkStudentEditModalHTML() {
                         newExpiry = addMonths(Math.max(now, toMs(lic.expiresAt)), months);
                         await licRef.update({ expiresAt: newExpiry, status: 'ACTIVE', lastRenewedAt: now, lastOrderId: x.id });
                     } else {
+                        var newRefCode = genRefCode();
                         const existing = new Set((window.allAdminCloudKeys || []).map(k => String(k.secretKey || '').toUpperCase()));
                         secretKey = x.passHash ? '' : genKey(existing);
                         newExpiry = addMonths(now, months);
@@ -30456,18 +30473,21 @@ function injectBulkStudentEditModalHTML() {
                             ...(x.passHash ? { keyHash: x.passHash, authMode: 'password' } : {}),
                             expiresAt: newExpiry, status: 'ACTIVE', createdAt: now, plan: x.type,
                             hmName: x.type === 'school' ? x.personName : '', taluk: x.taluk || '', district: x.district || '',
-                            source: 'online', firstOrderId: x.id, referredBy: x.referralCode || ''
+                            source: 'online', firstOrderId: x.id, referredBy: x.referralCode || '', refCode: newRefCode
                         };
                         if (x.type === 'teacher') Object.assign(rec, { teacherName: x.personName, schoolDise: x.dise || '', teacherPack: x.teacher || {} });
                         await licRef.set(rec);
                         if (x.passHash) await db.collection('ksrms_secrets').doc(String(x.licenseId)).set({ keyNorm: x.passHash, updatedAt: now });
                     }
-                    await db.collection('ksrms_refcodes').doc(String(x.licenseId)).set({ name: (x.type === 'teacher' ? x.personName + ', ' : '') + x.schoolName });
+                    if (!lic && newRefCode) await db.collection('ksrms_refcodes').doc(newRefCode).set({ name: (x.type === 'teacher' ? x.personName + ', ' : '') + x.schoolName, licenseId: String(x.licenseId) });
                     // Referral: ಕೋಡ್ ಕೊಟ್ಟವರಿಗೆ ಉಚಿತ ಅವಧಿ
                     let refMsg = '';
-                    if (x.kind === 'new' && !lic && x.referralCode && x.referralCode !== x.licenseId) {
+                    if (x.kind === 'new' && !lic && x.referralCode) {
                         try {
-                            const rRef = db.collection('ksrms_licenses').doc(x.referralCode);
+                            const rc = await db.collection('ksrms_refcodes').doc(x.referralCode).get();
+                            const ownerId = rc.exists ? String((rc.data() || {}).licenseId || '') : '';
+                            if (!ownerId || ownerId === String(x.licenseId)) throw new Error('invalid referral');
+                            const rRef = db.collection('ksrms_licenses').doc(ownerId);
                             const rd = await rRef.get();
                             if (rd.exists) {
                                 const r = rd.data();
@@ -30484,9 +30504,9 @@ function injectBulkStudentEditModalHTML() {
                     const link = location.href.split('#')[0].split('?')[0];
                     const loginId = String(x.licenseId).startsWith('T') ? String(x.licenseId).slice(1) : x.licenseId;
                     const msg = (!lic && !secretKey)
-                        ? `ನಮಸ್ಕಾರ ${x.personName} 🙏\nKSRMS ${x.type === 'teacher' ? 'ಶಿಕ್ಷಕರ' : 'ಶಾಲಾ'} Pack ಸಕ್ರಿಯಗೊಂಡಿದೆ.\n\nವೆಬ್‌ಸೈಟ್: ${link}\nಲಾಗಿನ್ ID: ${loginId}\nಪಾಸ್‌ವರ್ಡ್: ನೋಂದಣಿಯಲ್ಲಿ ನೀವು ಹೊಂದಿಸಿದ್ದು\nಅವಧಿ: ${fmtD(newExpiry)} ವರೆಗೆ\n\nನಿಮ್ಮ Referral Code: ${x.licenseId} — ಹೊಸಬರಿಗೆ ಹಂಚಿ, ನಿಮಗೆ ಉಚಿತ ಅವಧಿ ಪಡೆಯಿರಿ.`
+                        ? `ನಮಸ್ಕಾರ ${x.personName} 🙏\nKSRMS ${x.type === 'teacher' ? 'ಶಿಕ್ಷಕರ' : 'ಶಾಲಾ'} Pack ಸಕ್ರಿಯಗೊಂಡಿದೆ.\n\nವೆಬ್‌ಸೈಟ್: ${link}\nಲಾಗಿನ್ ID: ${loginId}\nಪಾಸ್‌ವರ್ಡ್: ನೋಂದಣಿಯಲ್ಲಿ ನೀವು ಹೊಂದಿಸಿದ್ದು\nಅವಧಿ: ${fmtD(newExpiry)} ವರೆಗೆ\n\n🎁 ನಿಮ್ಮ Referral Code: ${newRefCode || ''} — ಹೊಸಬರಿಗೆ ಹಂಚಿ, ನಿಮಗೆ ಉಚಿತ ಅವಧಿ ಪಡೆಯಿರಿ.`
                         : secretKey
-                        ? `ನಮಸ್ಕಾರ ${x.personName} 🙏\nKSRMS ${x.type === 'teacher' ? 'ಶಿಕ್ಷಕರ' : 'ಶಾಲಾ'} Pack ಸಕ್ರಿಯಗೊಂಡಿದೆ.\n\nವೆಬ್‌ಸೈಟ್: ${link}\nಲಾಗಿನ್ ID: ${loginId}\nSecret Key: ${secretKey}\nಅವಧಿ: ${fmtD(newExpiry)} ವರೆಗೆ\n\nನಿಮ್ಮ Referral Code: ${x.licenseId} — ಹೊಸಬರಿಗೆ ಹಂಚಿ, ನಿಮಗೆ ಉಚಿತ ಅವಧಿ ಪಡೆಯಿರಿ.`
+                        ? `ನಮಸ್ಕಾರ ${x.personName} 🙏\nKSRMS ${x.type === 'teacher' ? 'ಶಿಕ್ಷಕರ' : 'ಶಾಲಾ'} Pack ಸಕ್ರಿಯಗೊಂಡಿದೆ.\n\nವೆಬ್‌ಸೈಟ್: ${link}\nಲಾಗಿನ್ ID: ${loginId}\nSecret Key: ${secretKey}\nಅವಧಿ: ${fmtD(newExpiry)} ವರೆಗೆ\n\n🎁 ನಿಮ್ಮ Referral Code: ${newRefCode || ''} — ಹೊಸಬರಿಗೆ ಹಂಚಿ, ನಿಮಗೆ ಉಚಿತ ಅವಧಿ ಪಡೆಯಿರಿ.`
                         : `ನಮಸ್ಕಾರ ${x.personName || ''} 🙏\nನಿಮ್ಮ KSRMS ಅವಧಿಯನ್ನು ${fmtD(newExpiry)} ವರೆಗೆ ವಿಸ್ತರಿಸಲಾಗಿದೆ. ಧನ್ಯವಾದಗಳು!`;
                     if (confirm(`✅ ಅನುಮೋದಿಸಲಾಗಿದೆ.${secretKey ? `\nKey: ${secretKey}` : ''}\nಮುಕ್ತಾಯ: ${fmtD(newExpiry)}${refMsg}\n\nಖರೀದಿದಾರರಿಗೆ WhatsApp ಸಂದೇಶ ಕಳುಹಿಸಬೇಕೇ?`)) {
                         window.open(`https://api.whatsapp.com/send?phone=91${x.mobile}&text=${encodeURIComponent(msg)}`, '_blank');
