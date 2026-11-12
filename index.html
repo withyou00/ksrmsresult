@@ -30313,6 +30313,8 @@ function injectBulkStudentEditModalHTML() {
                 try {
                     const qs = await db.collection('ksrms_orders').where('status', '==', 'PENDING').get();
                     pendingCount = qs.size;
+                    window.ksrmsPendingOrderCount = pendingCount;
+                    try { const tb = document.querySelector('#admTabs [data-admtab="orders"]'); if (tb) tb.innerHTML = '🛒 ಆರ್ಡರ್‌ಗಳು' + (pendingCount ? ' <span class="badge bg-danger">' + pendingCount + '</span>' : ''); } catch (e) {}
                 } catch (e) { return; }
                 const anchor = document.getElementById('adminRevenueAnalyticsCards') || document.querySelector('#adminPanelModal .table-responsive');
                 if (anchor && !document.getElementById('ksrmsOrdersBar')) {
@@ -30575,6 +30577,177 @@ function injectBulkStudentEditModalHTML() {
 
             loadStore();
             console.log('[KSRMS V9] Online store, teacher pack & offers active.');
+        })();
+
+        // ======================================================================
+        // KSRMS V10.0 — Admin ಪ್ಯಾನೆಲ್ ಸರಳೀಕರಣ (ಟ್ಯಾಬ್‌ಗಳು) + ಹಳೆಯ ನೋಂದಣಿ ವಿನಂತಿ ದೋಷ ಸರಿಪಡಿಕೆ
+        // • ಟ್ಯಾಬ್‌ಗಳು: 🏫 ಶಾಲೆಗಳು | 🛒 ಆರ್ಡರ್‌ಗಳು | ➕ ಹೊಸ Key | 📢 ಸೂಚನೆ
+        // • ಶಾಲೆಯ ಹೆಸರಿನಲ್ಲಿ ' (ಉದಾ: MLA'S) ಇದ್ದರೆ APPROVE/REJECT ಬಟನ್ ಕೆಲಸ ಮಾಡುತ್ತಿರಲಿಲ್ಲ — ಸರಿಪಡಿಸಲಾಗಿದೆ
+        // ======================================================================
+        (function KSRMS_AdminTabsV10() {
+            const esc = v => String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const modal = () => document.getElementById('adminPanelModal');
+            const body = () => document.querySelector('#adminPanelModal .modal-body');
+            const TABS = [
+                ['schools', '🏫 ಶಾಲೆಗಳು'],
+                ['orders', '🛒 ಆರ್ಡರ್‌ಗಳು'],
+                ['newkey', '➕ ಹೊಸ Key (ಕೈಯಾರೆ)'],
+                ['notice', '📢 ಸೂಚನೆ']
+            ];
+            let current = 'schools';
+            try { current = sessionStorage.getItem('ksrms_admin_tab') || 'schools'; } catch (e) {}
+            let legacyCount = 0;
+
+            function build() {
+                const b = body(); if (!b) return null;
+                const m = modal();
+                const dlg = m && m.querySelector('.modal-dialog');
+                if (dlg) { dlg.classList.remove('modal-lg'); dlg.classList.add('modal-xl'); }
+                if (b.classList.contains('p-4')) { b.classList.remove('p-4'); b.classList.add('p-3'); }
+                let bar = document.getElementById('admTabs');
+                if (!bar) {
+                    bar = document.createElement('div');
+                    bar.id = 'admTabs';
+                    bar.className = 'd-flex gap-1 flex-wrap mb-3 pb-2 border-bottom';
+                    b.insertBefore(bar, b.firstChild);
+                    TABS.forEach(([id]) => {
+                        const p = document.createElement('div');
+                        p.id = 'admPane_' + id;
+                        b.appendChild(p);
+                    });
+                    bar.addEventListener('click', e => {
+                        const t = e.target.closest('button[data-admtab]');
+                        if (t) show(t.getAttribute('data-admtab'));
+                    });
+                    // ಆರ್ಡರ್ ಟ್ಯಾಬ್‌ನ ಭಾಗಗಳನ್ನು ಮೊದಲೇ ರಚಿಸಿ (V9 / ಹಳೆಯ ಕೋಡ್ ಇವನ್ನೇ ತುಂಬುತ್ತವೆ)
+                    const op = document.getElementById('admPane_orders');
+                    op.innerHTML = `<div class="small text-muted mb-2">ಶಾಲೆಗಳು/ಶಿಕ್ಷಕರು ವೆಬ್‌ಸೈಟ್‌ನಲ್ಲಿ ತಾವೇ ನೋಂದಾಯಿಸಿ ಪಾವತಿಸಿದ ಆರ್ಡರ್‌ಗಳು ಇಲ್ಲಿ. ನಿಮ್ಮ ಬ್ಯಾಂಕ್/UPI ಆ್ಯಪ್‌ನಲ್ಲಿ ಹಣ ಬಂದಿದ್ದು ನೋಡಿ ಅನುಮೋದಿಸಿ.</div>`;
+                    if (!document.getElementById('ksrmsOrdersBar')) {
+                        const ob = document.createElement('div'); ob.id = 'ksrmsOrdersBar'; ob.className = 'd-flex gap-2 flex-wrap mb-3'; op.appendChild(ob);
+                    }
+                    const lp = document.createElement('div'); lp.id = 'adminPendingRequestsContainer'; lp.className = 'mb-3'; op.appendChild(lp);
+                }
+                renderBar();
+                return b;
+            }
+
+            function renderBar() {
+                const bar = document.getElementById('admTabs'); if (!bar) return;
+                const n = (Number(window.ksrmsPendingOrderCount) || 0) + legacyCount;
+                bar.innerHTML = TABS.map(([id, label]) => `<button type="button" data-admtab="${id}" class="btn btn-sm fw-bold ${id === current ? 'btn-dark' : 'btn-outline-dark'}">${label}${id === 'orders' && n ? ` <span class="badge bg-danger">${n}</span>` : ''}</button>`).join('');
+            }
+
+            function show(id) {
+                current = id;
+                try { sessionStorage.setItem('ksrms_admin_tab', id); } catch (e) {}
+                TABS.forEach(([t]) => { const p = document.getElementById('admPane_' + t); if (p) p.style.display = t === id ? '' : 'none'; });
+                renderBar();
+                if (id === 'orders') renderPendingRequestsInAdminPanel();
+            }
+
+            // ಈಗಿರುವ ಭಾಗಗಳನ್ನು ಸರಿಯಾದ ಟ್ಯಾಬ್‌ಗೆ ಸರಿಸುವುದು
+            function organize() {
+                const b = build(); if (!b) return;
+                const pane = id => document.getElementById('admPane_' + id);
+                const move = (id, el) => { if (el && el.parentNode && el.parentNode !== pane(id) && !pane(id).contains(el)) pane(id).appendChild(el); };
+                const tableBody = document.getElementById('adminKeysTableBody');
+                const tableBox = tableBody && tableBody.closest('.table-responsive');
+                const search = document.getElementById('adminSearchKeyInput');
+                const cards = document.getElementById('adminRevenueAnalyticsCards');
+                const total = b.querySelector(':scope > .alert.alert-dark') || (pane('schools').querySelector('.alert.alert-dark'));
+                // ಶಾಲೆಗಳು: ಒಟ್ಟು → ಕಾರ್ಡ್‌ಗಳು → ಹುಡುಕಾಟ → ಪಟ್ಟಿ (ಕ್ರಮ ಉಳಿಸಿ)
+                const sp = pane('schools');
+                [total, cards, search && search.parentNode, tableBox].forEach(el => { if (el && el.parentNode !== sp) sp.appendChild(el); });
+                if (tableBox) { tableBox.style.maxHeight = '60vh'; }
+                // ಹೊಸ Key
+                const gName = document.getElementById('admGenSchoolName');
+                const gRow = gName && gName.closest('.row');
+                const gOut = document.getElementById('genKeyOutputContainer');
+                if (gRow && gRow.parentNode !== pane('newkey')) {
+                    const info = document.createElement('div');
+                    info.className = 'small text-muted mb-2';
+                    info.textContent = 'ಆನ್‌ಲೈನ್ ಖರೀದಿ ಇಲ್ಲದೆ ನೇರವಾಗಿ ಹಣ ಪಡೆದ ಶಾಲೆಗೆ ಇಲ್ಲಿ Key ಮಾಡಿ (1 ವರ್ಷ).';
+                    pane('newkey').appendChild(info);
+                    move('newkey', gRow);
+                }
+                move('newkey', gOut);
+                // ಸೂಚನೆ
+                move('notice', document.getElementById('admNoticeInputContainer'));
+                // ಹಳೆಯ ಶೀರ್ಷಿಕೆಗಳು / ಗೆರೆಗಳನ್ನು ಮರೆಮಾಡಿ, ಉಳಿದ ಹೊಸ ಭಾಗಗಳನ್ನು ಶಾಲೆಗಳ ಟ್ಯಾಬ್‌ಗೆ ಸರಿಸಿ
+                Array.from(b.children).forEach(el => {
+                    if (el.id === 'admTabs' || /^admPane_/.test(el.id)) return;
+                    if (el.tagName === 'HR' || el.tagName === 'H6') { el.style.display = 'none'; return; }
+                    if (el.id === 'ksrmsOrdersBar' || el.id === 'adminPendingRequestsContainer') { pane('orders').appendChild(el); return; }
+                    sp.appendChild(el);
+                });
+                TABS.forEach(([t]) => { const p = pane(t); if (p) p.style.display = t === current ? '' : 'none'; });
+                renderBar();
+            }
+
+            let orgTimer = null;
+            const organizeSoon = () => { clearTimeout(orgTimer); orgTimer = setTimeout(organize, 50); };
+            document.addEventListener('shown.bs.modal', e => { if (e.target && e.target.id === 'adminPanelModal') organize(); });
+            document.addEventListener('show.bs.modal', e => { if (e.target && e.target.id === 'adminPanelModal') organize(); });
+            try {
+                const b = body();
+                if (b) new MutationObserver(organizeSoon).observe(b, { childList: true });
+            } catch (e) {}
+            if (typeof renderAdminKeysTable === 'function') {
+                const _r = renderAdminKeysTable;
+                renderAdminKeysTable = function () { const r = _r.apply(this, arguments); organizeSoon(); setTimeout(organize, 1500); return r; };
+            }
+
+            // ---------------- ಹಳೆಯ ನೋಂದಣಿ ವಿನಂತಿಗಳು (ಸರಿಪಡಿಸಿದ ಆವೃತ್ತಿ) ----------------
+            renderPendingRequestsInAdminPanel = async function () {
+                const box = document.getElementById('adminPendingRequestsContainer');
+                if (!box || !db) return;
+                let list = [];
+                try {
+                    const snap = await db.collection('ksrms_pending_requests').get();
+                    snap.forEach(d => list.push(Object.assign({ _id: d.id }, d.data() || {})));
+                } catch (e) { box.innerHTML = ''; return; }
+                legacyCount = list.length;
+                renderBar();
+                if (!list.length) { box.innerHTML = ''; return; }
+                box.innerHTML = `<div class="card border-warning">
+                    <div class="card-header bg-warning fw-bold py-2 small">📝 ಹಳೆಯ ರೀತಿಯ ನೋಂದಣಿ ವಿನಂತಿಗಳು (${list.length})</div>
+                    <div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0 small text-center">
+                        <thead class="table-light"><tr><th>DISE</th><th>ಶಾಲೆ</th><th>ಮೊಬೈಲ್</th><th>ದಿನಾಂಕ</th><th></th></tr></thead>
+                        <tbody>${list.map((p, i) => `<tr>
+                            <td class="fw-bold text-primary">${esc(p.diseCode || p._id)}</td>
+                            <td class="text-start">${esc(p.schoolName)}</td>
+                            <td>${esc(p.mobile || '-')}</td>
+                            <td>${new Date(p.requestedAt || Date.now()).toLocaleDateString('en-GB')}</td>
+                            <td class="text-nowrap">
+                                <button type="button" class="btn btn-sm btn-success py-0 fw-bold" data-lg-ok="${i}">✅ ಅನುಮೋದಿಸಿ</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger py-0 fw-bold" data-lg-no="${i}">🗑️ ಅಳಿಸಿ</button>
+                            </td></tr>`).join('')}</tbody></table></div></div>`;
+                box.querySelectorAll('[data-lg-ok]').forEach(btn => btn.onclick = async () => {
+                    const p = list[+btn.getAttribute('data-lg-ok')];
+                    const dise = String(p.diseCode || p._id).trim();
+                    if (typeof approveSchoolRegistration === 'function') await approveSchoolRegistration(dise, String(p.schoolName || ''), String(p.mobile || ''));
+                    try {
+                        const lic = await db.collection('ksrms_licenses').doc(dise).get();
+                        if (lic.exists) await db.collection('ksrms_pending_requests').doc(p._id).delete();
+                    } catch (e) { alert('ವಿನಂತಿ ತೆಗೆಯಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ: ' + ((e && e.code) || e)); }
+                    if (typeof window.ksrmsSyncSecretsNow === 'function') { try { window.ksrmsSyncSecretsNow(); } catch (e) {} }
+                    renderPendingRequestsInAdminPanel();
+                });
+                box.querySelectorAll('[data-lg-no]').forEach(btn => btn.onclick = async () => {
+                    const p = list[+btn.getAttribute('data-lg-no')];
+                    if (!confirm(`"${p.schoolName}" ವಿನಂತಿಯನ್ನು ಅಳಿಸಬೇಕೇ?`)) return;
+                    try {
+                        await db.collection('ksrms_pending_requests').doc(p._id).delete();
+                        const still = await db.collection('ksrms_pending_requests').doc(p._id).get();
+                        if (still.exists) throw new Error('not deleted');
+                        renderPendingRequestsInAdminPanel();
+                    } catch (e) { alert('ಅಳಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ: ' + ((e && e.code) || e.message || e) + '\nAdmin ಆಗಿ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ ಪ್ರಯತ್ನಿಸಿ.'); }
+                });
+            };
+
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(organize, 500));
+            else setTimeout(organize, 500);
+            console.log('[KSRMS V10] Admin panel tabs active.');
         })();
 
         // ======================================================================
