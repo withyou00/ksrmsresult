@@ -1993,7 +1993,7 @@
             const inputKeyNorm = normalizeKeyStr(rawKey);
             const storedKeyNorm = normalizeKeyStr(foundRecord.secretKey);
 
-            if (inputKeyNorm !== storedKeyNorm && !storedKeyNorm.endsWith(inputKeyNorm)) {
+            if (!inputKeyNorm || inputKeyNorm !== storedKeyNorm) { // ಪೂರ್ಣ Key ಕಡ್ಡಾಯ (ಭಾಗಶಃ Key ಲಾಗಿನ್ ಸುರಕ್ಷತಾ ದೋಷ ಸರಿಪಡಿಸಲಾಗಿದೆ)
                 return alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ! ದಯವಿಟ್ಟು ಕಳುಹಿಸಲಾದ Secret Key ಅನ್ನು ಸರಿಯಾಗಿ ನಮೂದಿಸಿ.');
             }
 
@@ -17257,7 +17257,7 @@
             const inputKeyNorm = normalizeKeyStr(rawKey);
             const storedKeyNorm = normalizeKeyStr(foundRecord.secretKey);
 
-            if (inputKeyNorm !== storedKeyNorm && !storedKeyNorm.endsWith(inputKeyNorm)) {
+            if (!inputKeyNorm || inputKeyNorm !== storedKeyNorm) { // ಪೂರ್ಣ Key ಕಡ್ಡಾಯ (ಭಾಗಶಃ Key ಲಾಗಿನ್ ಸುರಕ್ಷತಾ ದೋಷ ಸರಿಪಡಿಸಲಾಗಿದೆ)
                 return alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ! ದಯವಿಟ್ಟು ಕಳುಹಿಸಲಾದ Secret Key ಅನ್ನು ಸರಿಯಾಗಿ ನಮೂದಿಸಿ.');
             }
 
@@ -17361,7 +17361,7 @@
             const inputKeyNorm = normalizeKeyStr(rawKey);
             const storedKeyNorm = normalizeKeyStr(foundRecord.secretKey);
 
-            if (inputKeyNorm !== storedKeyNorm && !storedKeyNorm.endsWith(inputKeyNorm)) {
+            if (!inputKeyNorm || inputKeyNorm !== storedKeyNorm) { // ಪೂರ್ಣ Key ಕಡ್ಡಾಯ (ಭಾಗಶಃ Key ಲಾಗಿನ್ ಸುರಕ್ಷತಾ ದೋಷ ಸರಿಪಡಿಸಲಾಗಿದೆ)
                 loginFailAttempts++;
                 if (loginFailAttempts >= 5) loginLockoutTime = Date.now() + (5 * 60 * 1000);
                 return alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ!');
@@ -27020,7 +27020,7 @@ function injectBulkStudentEditModalHTML() {
 
             const inputKeyNorm = normalizeKeyStr(rawKey);
             const storedKeyNorm = normalizeKeyStr(foundRecord.secretKey);
-            if (inputKeyNorm !== storedKeyNorm && !storedKeyNorm.endsWith(inputKeyNorm)) {
+            if (!inputKeyNorm || inputKeyNorm !== storedKeyNorm) { // ಪೂರ್ಣ Key ಕಡ್ಡಾಯ (ಭಾಗಶಃ Key ಲಾಗಿನ್ ಸುರಕ್ಷತಾ ದೋಷ ಸರಿಪಡಿಸಲಾಗಿದೆ)
                 return alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ!');
             }
 
@@ -28358,7 +28358,7 @@ function injectBulkStudentEditModalHTML() {
                             try { await createSession(user.uid, dise, h); secured = true; } catch (e) {}
                         }
                         const stored = licData.keyHash ? '' : norm(licData.secretKey);
-                        if (!licData.keyHash && (!stored || (keyNorm !== stored && !stored.endsWith(keyNorm)))) {
+                        if (!licData.keyHash && (!stored || keyNorm !== stored)) {
                             alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ!');
                             return;
                         }
