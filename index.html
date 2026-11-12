@@ -1301,8 +1301,8 @@
                                 <input type="text" class="form-control fw-bold border-primary" id="loginDiseCode" placeholder="Enter 11 Digit DISE Code">
                             </div>
                             <div class="mb-3">
-                                <label class="form-label fw-bold" data-i18n="lbl_login_key">Secret Activation Key:</label>
-                                <input type="text" class="form-control fw-bold border-danger text-uppercase" id="loginSecretKey" placeholder="KSRMS-XXXX-XXXX">
+                                <label class="form-label fw-bold">Secret Key / ಪಾಸ್‌ವರ್ಡ್:</label>
+                                <input type="text" class="form-control fw-bold border-danger" id="loginSecretKey" placeholder="KSRMS-XXXX-XXXX ಅಥವಾ ನಿಮ್ಮ ಪಾಸ್‌ವರ್ಡ್" autocomplete="current-password">
                             </div>
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <a href="#" class="text-danger fw-bold fs-8" onclick="openForgotKeyModal(); return false;" data-i18n="link_forgot_key">Forgot Secret Key?</a>
@@ -28303,7 +28303,10 @@ function injectBulkStudentEditModalHTML() {
             performSchoolLogin = async function () {
                 const diseEl = document.getElementById('loginDiseCode');
                 const keyEl = document.getElementById('loginSecretKey');
-                const dise = diseEl ? diseEl.value.trim() : '';
+                let dise = diseEl ? diseEl.value.trim() : '';
+                // ಶಿಕ್ಷಕರ Pack: 10 ಅಂಕೆಯ ಮೊಬೈಲ್ ಸಂಖ್ಯೆಯೇ ಲಾಗಿನ್ ID (ಒಳಗೆ "T" + ಮೊಬೈಲ್)
+                if (/^[6-9]\d{9}$/.test(dise)) dise = 'T' + dise;
+                else if (/^t[6-9]\d{9}$/i.test(dise)) dise = 'T' + dise.slice(1);
                 const rawKey = keyEl ? keyEl.value.trim() : '';
                 if (!dise || !rawKey) return alert('ದಯವಿಟ್ಟು ಶಾಲೆಯ DISE Code ಮತ್ತು Secret Key ಎರಡನ್ನೂ ನಮೂದಿಸಿ!');
 
@@ -28327,6 +28330,7 @@ function injectBulkStudentEditModalHTML() {
 
                     // 1) Firebase Rules ಮೂಲಕ Secret Key ಪರಿಶೀಲನೆ
                     try { await createSession(user.uid, dise, keyNorm); secured = true; } catch (e) { secured = false; }
+                    if (!secured) { try { await createSession(user.uid, dise, await passHash(dise, rawKey)); secured = true; } catch (e) {} }
 
                     // 2) ಲೈಸೆನ್ಸ್ ವಿವರ ಓದಿ (ಹಂತ-2 rules ನಲ್ಲಿ ಸ್ವಂತ ಶಾಲೆಯದ್ದು ಮಾತ್ರ ಓದಬಹುದು)
                     try {
@@ -28348,30 +28352,43 @@ function injectBulkStudentEditModalHTML() {
                                 : 'DISE Code ಅಥವಾ Secret Key ಸರಿಯಾಗಿಲ್ಲ! (ಪೂರ್ಣ Secret Key ಅನ್ನು ನಮೂದಿಸಿ)');
                             return;
                         }
-                        const stored = norm(licData.secretKey);
-                        if (!stored || (keyNorm !== stored && !stored.endsWith(keyNorm))) {
+                        if (licData.keyHash) {
+                            const h = await passHash(dise, rawKey);
+                            if (h !== licData.keyHash) { alert('ಪಾಸ್‌ವರ್ಡ್ ಸರಿಯಾಗಿಲ್ಲ!'); return; }
+                            try { await createSession(user.uid, dise, h); secured = true; } catch (e) {}
+                        }
+                        const stored = licData.keyHash ? '' : norm(licData.secretKey);
+                        if (!licData.keyHash && (!stored || (keyNorm !== stored && !stored.endsWith(keyNorm)))) {
                             alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ!');
                             return;
                         }
-                        try { await createSession(user.uid, dise, stored); secured = true; }
-                        catch (e) { console.warn('[KSRMS V6] secure session not yet available for', dise, '(admin has not synced secrets yet)'); }
+                        if (!licData.keyHash) {
+                            try { await createSession(user.uid, dise, stored); secured = true; }
+                            catch (e) { console.warn('[KSRMS V6] secure session not yet available for', dise, '(admin has not synced secrets yet)'); }
+                        }
                     }
 
                     const rec = licData || { diseCode: dise, schoolName: dise, mobile: '' };
 
+                    const isTeacherPack = String(rec.plan || '') === 'teacher';
                     currentSession = {
                         isLoggedIn: true,
                         role: 'school',
-                        diseCode: String(rec.diseCode || dise).trim(),
+                        diseCode: isTeacherPack ? dise : String(rec.diseCode || dise).trim(),
                         schoolName: rec.schoolName || dise,
-                        mobile: rec.mobile || ''
+                        mobile: rec.mobile || '',
+                        plan: isTeacherPack ? 'teacher' : 'school',
+                        pack: isTeacherPack ? (rec.teacherPack || null) : null,
+                        packOwner: isTeacherPack ? (rec.teacherName || '') : '',
+                        schoolDise: isTeacherPack ? (rec.schoolDise || '') : '',
+                        expiresAt: (rec.expiresAt && rec.expiresAt.toMillis) ? rec.expiresAt.toMillis() : (Number(rec.expiresAt) || 0)
                     };
                     try {
                         localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession));
                         sessionStorage.setItem('ksrms_active_session', JSON.stringify(currentSession));
                     } catch (e) {}
 
-                    appSettings.diseCode = currentSession.diseCode;
+                    appSettings.diseCode = currentSession.plan === 'teacher' ? (currentSession.schoolDise || '') : currentSession.diseCode;
                     appSettings.schoolName = currentSession.schoolName;
 
                     try { loginModalInstance.hide(); } catch (e) {}
@@ -28404,6 +28421,14 @@ function injectBulkStudentEditModalHTML() {
                 return _v5Subscribe(diseCode);
             };
 
+            // ಸ್ವಂತ ಪಾಸ್‌ವರ್ಡ್ ಖಾತೆಗಳು: ಪಾಸ್‌ವರ್ಡ್ ಎಲ್ಲಿಯೂ ಉಳಿಯುವುದಿಲ್ಲ, ಅದರ SHA-256 ಮಾತ್ರ
+            async function passHash(dise, pw) {
+                const data = new TextEncoder().encode(`KSRMS|${String(dise).trim()}|${String(pw)}`);
+                const buf = await crypto.subtle.digest('SHA-256', data);
+                return 'H' + Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+            }
+            window.ksrmsPassHash = passHash;
+
             async function bootSecure(dise, schoolName) {
                 try {
                     await authStateReady;
@@ -28417,7 +28442,7 @@ function injectBulkStudentEditModalHTML() {
                     try {
                         const d = await db.collection('ksrms_licenses').doc(dise).get();
                         licReadable = true;
-                        if (d.exists) stored = norm(d.data().secretKey);
+                        if (d.exists) stored = d.data().keyHash || norm(d.data().secretKey);
                     } catch (e) {}
                     if (stored) {
                         try { await createSession(u.uid, dise, stored); console.log('[KSRMS V6] secure session ready'); } catch (e) {}
@@ -28427,9 +28452,10 @@ function injectBulkStudentEditModalHTML() {
 
                     // ಹಂತ-2: Secret Key ಅನ್ನು ಒಮ್ಮೆ ಮತ್ತೆ ಕೇಳಿ
                     for (let i = 0; i < 3; i++) {
-                        const k = prompt(`🔐 ಸುರಕ್ಷತಾ ಅಪ್‌ಡೇಟ್\n\n"${schoolName || dise}" ಶಾಲೆಯ ಅಂಕಗಳನ್ನು ಸೇವ್ ಮಾಡಲು, ದಯವಿಟ್ಟು ನಿಮ್ಮ ಶಾಲೆಯ ಪೂರ್ಣ Secret Key ಅನ್ನು ಒಮ್ಮೆ ಮತ್ತೆ ನಮೂದಿಸಿ:`);
+                        const k = prompt(`🔐 ಸುರಕ್ಷತಾ ಅಪ್‌ಡೇಟ್\n\n"${schoolName || dise}" ಶಾಲೆಯ ಅಂಕಗಳನ್ನು ಸೇವ್ ಮಾಡಲು, ದಯವಿಟ್ಟು ನಿಮ್ಮ ಪೂರ್ಣ Secret Key / ಪಾಸ್‌ವರ್ಡ್ ಅನ್ನು ಒಮ್ಮೆ ಮತ್ತೆ ನಮೂದಿಸಿ:`);
                         if (k === null) break;
-                        try { await createSession(u.uid, dise, norm(k)); toast6('✅ ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಸಕ್ರಿಯವಾಗಿದೆ.'); return; }
+                        try { await createSession(u.uid, dise, norm(k)); toast6('✅ ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಸಕ್ರಿಯವಾಗಿದೆ.'); return; } catch (e) {}
+                        try { await createSession(u.uid, dise, await passHash(dise, k)); toast6('✅ ಸುರಕ್ಷಿತ ಲಾಗಿನ್ ಸಕ್ರಿಯವಾಗಿದೆ.'); return; }
                         catch (e) { alert('Secret Key ಸರಿಯಾಗಿಲ್ಲ, ಅಥವಾ ಶಾಲೆಯ ಲೈಸೆನ್ಸ್ ತಡೆಹಿಡಿಯಲಾಗಿದೆ. ಪೂರ್ಣ Key ಅನ್ನು ಸರಿಯಾಗಿ ನಮೂದಿಸಿ / Admin ಸಂಪರ್ಕಿಸಿ.'); }
                     }
                     toast6('⚠️ Secret Key ನಮೂದಿಸದ ಕಾರಣ ಅಂಕಗಳು ಈ ಸಾಧನದಲ್ಲಿ ಮಾತ್ರ ಉಳಿಯುತ್ತವೆ. Logout ಮಾಡಿ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ.');
@@ -28512,7 +28538,7 @@ function injectBulkStudentEditModalHTML() {
                     const licIds = new Set();
                     licSnap.forEach(d => {
                         licIds.add(d.id);
-                        const kn = norm((d.data() || {}).secretKey);
+                        const kn = (d.data() || {}).keyHash || norm((d.data() || {}).secretKey);
                         if (kn && secMap[d.id] !== kn) ops.push({ t: 'set', id: d.id, kn });
                     });
                     Object.keys(secMap).forEach(id => { if (!licIds.has(id)) ops.push({ t: 'del', id }); });
@@ -28740,13 +28766,14 @@ function injectBulkStudentEditModalHTML() {
                             : `<b class="${s.students ? 'text-primary' : 'text-muted'}">${s.students}</b> ಮಕ್ಕಳು<br><small class="${s.marks ? 'text-success fw-bold' : 'text-muted'}">${s.marks} ಅಂಕಗಳು</small>`;
                         const saved = s && s.saved ? `<small>${fmtDateTime(s.saved)}</small>` : '<small class="text-muted">-</small>';
                         const sec = sessions.map[k.diseCode] ? `<span class="badge bg-success" title="ಕೊನೆಯ ಸುರಕ್ಷಿತ ಲಾಗಿನ್: ${fmtDateTime(sessions.map[k.diseCode])}">🔐 ಹೌದು</span>` : '<span class="badge bg-light text-dark border">🔓 ಇಲ್ಲ</span>';
-                        const susp = isSuspended(k) ? ' <span class="badge bg-dark">⛔ ತಡೆಹಿಡಿಯಲಾಗಿದೆ</span>' : '';
+                        const susp = (isSuspended(k) ? ' <span class="badge bg-dark">⛔ ತಡೆಹಿಡಿಯಲಾಗಿದೆ</span>' : '')
+                            + (k.plan === 'teacher' ? ` <span class="badge bg-info text-dark">👩‍🏫 ಶಿಕ್ಷಕರ Pack${k.teacherName ? ': ' + esc(k.teacherName) : ''}</span>` : '');
                         const btn = (act, cls, label, title) => `<button type="button" class="btn btn-xs ${cls} fw-bold py-0 px-2 me-1 mb-1" data-act="${act}" data-dise="${dise}" title="${title}">${label}</button>`;
                         return `<tr>
                             <td class="fw-bold text-primary">${dise}</td>
                             <td class="text-start ps-2 fw-semibold">${esc(k.schoolName)}${susp}</td>
                             <td>${esc(k.mobile || '-')}</td>
-                            <td class="fw-bold text-danger fs-7">${esc(k.secretKey)}</td>
+                            <td class="fw-bold text-danger fs-7">${k.keyHash ? '<span class="badge bg-secondary">🔒 ಸ್ವಂತ ಪಾಸ್‌ವರ್ಡ್</span>' : esc(k.secretKey)}</td>
                             <td class="fs-7">${usage}</td>
                             <td>${saved}</td>
                             <td>${sec}</td>
@@ -28855,7 +28882,7 @@ function injectBulkStudentEditModalHTML() {
                     </select>
                     <label class="form-label fw-bold mb-1">Secret Key</label>
                     <div class="d-flex gap-2 mb-1">
-                        <input id="esKey" class="form-control fw-bold text-danger" value="${esc(k.secretKey)}">
+                        <input id="esKey" class="form-control fw-bold text-danger" value="${k.keyHash ? '' : esc(k.secretKey)}" placeholder="${k.keyHash ? '🔒 ಸ್ವಂತ ಪಾಸ್‌ವರ್ಡ್ — ಮರುಹೊಂದಿಸಲು ಹೊಸ Key ಮಾಡಿ' : ''}">
                         <button type="button" id="esNewKey" class="btn btn-outline-danger btn-sm text-nowrap">🔑 ಹೊಸ Key</button>
                     </div>
                     <small class="text-muted d-block mb-3">Key ಬದಲಿಸಿದರೆ ಆ ಶಾಲೆಯ ಎಲ್ಲಾ ಸಾಧನಗಳು Logout ಆಗುತ್ತವೆ; ಹೊಸ Key ಅನ್ನು ಶಾಲೆಗೆ ತಿಳಿಸಿ.</small>
@@ -28877,9 +28904,10 @@ function injectBulkStudentEditModalHTML() {
                     if (!name) return alert('ಶಾಲೆಯ ಹೆಸರು ಹಾಕಿ.');
                     if (!/^\d{10}$/.test(mobile)) return alert('ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ನಿಖರವಾಗಿ 10 ಅಂಕೆ ಇರಬೇಕು.');
                     if (!expStr) return alert('ಮುಕ್ತಾಯ ದಿನಾಂಕ ಆಯ್ಕೆಮಾಡಿ.');
-                    if (key.replace(/[^A-Z0-9]/g, '').length < 8) return alert('Secret Key ತುಂಬಾ ಚಿಕ್ಕದಾಗಿದೆ.');
+                    const keepPw = !!k.keyHash && !key;
+                    if (!keepPw && key.replace(/[^A-Z0-9]/g, '').length < 8) return alert('Secret Key ತುಂಬಾ ಚಿಕ್ಕದಾಗಿದೆ.');
                     const expiresAt = new Date(expStr + 'T23:59:59').getTime();
-                    const keyChanged = key !== String(k.secretKey || '').toUpperCase();
+                    const keyChanged = !keepPw && key !== String(k.secretKey || '').toUpperCase();
                     const suspendNow = status === 'SUSPENDED' && !isSuspended(k);
 
                     if (keyChanged) {
@@ -28895,9 +28923,17 @@ function injectBulkStudentEditModalHTML() {
 
                     const btn = w.querySelector('#esSave'); btn.disabled = true; btn.textContent = '⏳ ಉಳಿಸಲಾಗುತ್ತಿದೆ...';
                     const changes = { schoolName: name, mobile, expiresAt, status, secretKey: key };
+                    const localChanges = Object.assign({}, changes);
+                    if (keepPw) { delete changes.secretKey; delete localChanges.secretKey; }
+                    else if (k.keyHash) {
+                        // ಪಾಸ್‌ವರ್ಡ್ ಮರೆತವರಿಗೆ: ಹೊಸ Secret Key ಕೊಟ್ಟು ಸ್ವಂತ ಪಾಸ್‌ವರ್ಡ್ ತೆಗೆದುಹಾಕಿ
+                        changes.keyHash = firebase.firestore.FieldValue.delete();
+                        changes.authMode = firebase.firestore.FieldValue.delete();
+                        localChanges.keyHash = ''; localChanges.authMode = '';
+                    }
                     try {
                         await db.collection('ksrms_licenses').doc(String(k.diseCode)).update(changes);
-                        updateLocalKey(k.diseCode, changes);
+                        updateLocalKey(k.diseCode, localChanges);
                         if (keyChanged && typeof window.ksrmsSyncSecretsNow === 'function') { try { await window.ksrmsSyncSecretsNow(); } catch (e) {} }
                         let loggedOut = 0;
                         if (keyChanged || suspendNow) loggedOut = await forceLogout(k.diseCode);
@@ -29033,7 +29069,7 @@ function injectBulkStudentEditModalHTML() {
             const sess = () => (typeof currentSession !== 'undefined' && currentSession) ? currentSession : {};
             const isSchool = () => !!(sess().isLoggedIn && sess().role === 'school' && sess().diseCode && sess().diseCode !== 'ALL');
             const teacher = () => isSchool() ? (sess().teacher || null) : null;
-            const isHM = () => isSchool() && !teacher();
+            const isHM = () => isSchool() && !teacher() && sess().plan !== 'teacher';
             const dise = () => isSchool() ? String(sess().diseCode).trim() : null;
             const cfgRef = (d, id) => db.collection('ksrms_schools').doc(d).collection('config').doc(id);
 
@@ -29093,6 +29129,7 @@ function injectBulkStudentEditModalHTML() {
             function canEdit(cls, sub, exam) {
                 if (!isSchool()) return { ok: true };
                 if (exam && isLocked(cls, exam)) return { ok: false, why: `🔒 ${cls} — ${String(exam).toUpperCase()} ಅಂಕಗಳು ಲಾಕ್ ಆಗಿವೆ. ಬದಲಿಸಲು ಮುಖ್ಯಶಿಕ್ಷಕರು Unlock ಮಾಡಬೇಕು.` };
+                if (typeof window.ksrmsPackCanEdit === 'function') { const pr = window.ksrmsPackCanEdit(cls, sub); if (pr && !pr.ok) return pr; }
                 const t = teacher();
                 if (!t) return { ok: true };
                 const classOk = (t.classes || []).includes('*') || (t.classes || []).includes(cls);
@@ -29418,7 +29455,7 @@ function injectBulkStudentEditModalHTML() {
             // ---------------- ಬ್ಯಾಡ್ಜ್ / HM ಪ್ಯಾನೆಲ್ ಬಟನ್ ----------------
             function refreshBadge() {
                 let b = document.getElementById('ksrmsRoleBtn');
-                if (!isSchool()) { if (b) b.remove(); return; }
+                if (!isSchool() || sess().plan === 'teacher') { if (b) b.remove(); return; }
                 if (!b) {
                     b = document.createElement('button');
                     b.id = 'ksrmsRoleBtn'; b.type = 'button';
@@ -29459,12 +29496,14 @@ function injectBulkStudentEditModalHTML() {
                         <button type="button" class="btn btn-sm fw-bold" data-tab="locks">🔒 ಅಂಕ ಲಾಕ್</button>
                         <button type="button" class="btn btn-sm fw-bold" data-tab="log">📜 ಬದಲಾವಣೆ ದಾಖಲೆ</button>
                         <button type="button" class="btn btn-sm fw-bold" data-tab="security">🔑 ಸುರಕ್ಷತೆ</button>
+                        <button type="button" class="btn btn-sm fw-bold" data-tab="store">🛒 Renew / 🎁 Refer</button>
                     </div>
                     <div id="hmBody" style="padding:12px 16px;overflow:auto;flex:1;font-size:14px;"></div></div>`;
                 document.body.appendChild(w);
                 w.addEventListener('click', e => {
                     if (e.target === w || (e.target.hasAttribute && e.target.hasAttribute('data-close'))) { w.remove(); return; }
                     const tb = e.target.closest && e.target.closest('button[data-tab]');
+                    if (tb && tb.getAttribute('data-tab') === 'store') { w.remove(); if (typeof window.ksrmsOpenStore === 'function') window.ksrmsOpenStore(); return; }
                     if (tb) { hmTab = tb.getAttribute('data-tab'); renderHM(); }
                 });
                 renderHM();
@@ -29682,9 +29721,9 @@ function injectBulkStudentEditModalHTML() {
                 let dn = ''; try { dn = localStorage.getItem('ksrms_device_name') || ''; } catch (e) {}
                 el.innerHTML = `
                     <div class="border rounded p-3 mb-3">
-                        <h6 class="fw-bold">🔑 ಮುಖ್ಯ Secret Key ಬದಲಿಸಿ</h6>
+                        <h6 class="fw-bold">🔑 ಮುಖ್ಯ ಲಾಗಿನ್ ಪಾಸ್‌ವರ್ಡ್ ಬದಲಿಸಿ</h6>
                         <div class="small text-muted mb-2">ಶಾಲೆಯ ಮುಖ್ಯ Key ಬೇರೆ ಶಿಕ್ಷಕರಿಗೂ ಗೊತ್ತಿದ್ದರೆ, ಇಲ್ಲಿ ಹೊಸ Key ಮಾಡಿ ನೀವು ಮಾತ್ರ ಇಟ್ಟುಕೊಳ್ಳಿ. ಶಿಕ್ಷಕರಿಗೆ ಅವರದೇ ಮೊಬೈಲ್ + PIN ಲಾಗಿನ್ ಕೊಡಿ. ಹಳೆಯ Key ಯಿಂದ ಲಾಗಿನ್ ಆಗಿರುವ ಎಲ್ಲಾ ಸಾಧನಗಳು (ಹಂತ-2 Rules ನಂತರ) ತಾನಾಗಿಯೇ ಹೊರಗುಳಿಯುತ್ತವೆ.</div>
-                        <button type="button" class="btn btn-danger btn-sm fw-bold" id="secChangeKey">🔑 ಹೊಸ Secret Key ಮಾಡಿ</button>
+                        <button type="button" class="btn btn-danger btn-sm fw-bold" id="secChangeKey">🔑 ನನ್ನದೇ ಪಾಸ್‌ವರ್ಡ್ ಹೊಂದಿಸಿ</button>
                     </div>
                     <div class="border rounded p-3">
                         <h6 class="fw-bold">📱 ಈ ಸಾಧನದ ಹೆಸರು</h6>
@@ -29692,7 +29731,7 @@ function injectBulkStudentEditModalHTML() {
                         <div class="input-group input-group-sm" style="max-width:380px;"><input id="secDev" class="form-control" value="${esc(dn)}" maxlength="30"><button type="button" class="btn btn-primary" id="secDevSave">ಉಳಿಸಿ</button></div>
                     </div>`;
                 el.querySelector('#secDevSave').onclick = () => { try { localStorage.setItem('ksrms_device_name', el.querySelector('#secDev').value.trim()); } catch (e) {} toast('✅ ಉಳಿಸಲಾಗಿದೆ'); };
-                el.querySelector('#secChangeKey').onclick = changeMainKey;
+                el.querySelector('#secChangeKey').onclick = () => (typeof window.ksrmsChangePassword === 'function' ? window.ksrmsChangePassword() : changeMainKey());
             }
             async function changeMainKey() {
                 const v6 = V6();
@@ -29753,6 +29792,778 @@ function injectBulkStudentEditModalHTML() {
 
             setTimeout(() => { const d = dise(); if (d) startCfg(d); refreshBadge(); scheduleScan(); }, 1500);
             console.log('[KSRMS V8] Teachers, locks & change log active.');
+        })();
+
+        // ======================================================================
+        // KSRMS V9.0 — 🛒 ಆನ್‌ಲೈನ್ ಖರೀದಿ (Cart) + ಶಿಕ್ಷಕರ Pack + ಸ್ವಯಂ ರಿಯಾಯಿತಿ + Referral
+        // ----------------------------------------------------------------------
+        // • ಶಾಲೆ / ಶಿಕ್ಷಕರು ತಾವೇ ನೋಂದಾಯಿಸಿ, Pack ಆಯ್ಕೆಮಾಡಿ, UPI ಮೂಲಕ ಪಾವತಿಸಿ, UTR ಸಲ್ಲಿಸುತ್ತಾರೆ.
+        // • Admin ಒಂದು ಕ್ಲಿಕ್‌ನಲ್ಲಿ ಅನುಮೋದಿಸಿದರೆ Key ತಾನಾಗಿಯೇ ತಯಾರಾಗಿ ಖರೀದಿದಾರರ ಪರದೆಯಲ್ಲಿ ಕಾಣುತ್ತದೆ.
+        // • ರಿಯಾಯಿತಿಗಳು ಸ್ವಯಂ: 2 ವರ್ಷಕ್ಕೆ 6 ತಿಂಗಳು ಉಚಿತ, ಮುಂಚಿತ Renew 20% / 10%, Referral ₹50 + 1 ತಿಂಗಳು.
+        // • ಶಿಕ್ಷಕರ Pack: ಒಂದು ತರಗತಿ ಶಿಕ್ಷಕ ವರ್ಗ (ಪೂರ್ಣ) + ತಮ್ಮ ವಿಷಯ ಕಲಿಸುವ ಬೇರೆ ತರಗತಿಗಳು (ಆ ವಿಷಯ ಮಾತ್ರ).
+        // • ಎಲ್ಲಾ ಬೆಲೆ/ನಿಯಮಗಳನ್ನು Admin ಪ್ಯಾನೆಲ್‌ನ "⚙️ Store ಸೆಟ್ಟಿಂಗ್ಸ್" ನಿಂದ ಬದಲಿಸಬಹುದು.
+        // ======================================================================
+        (function KSRMS_StoreV9() {
+            if (typeof db === 'undefined' || !db || typeof firebase === 'undefined') return;
+
+            const DAY = 864e5;
+            const esc = v => String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const toMs = v => !v ? 0 : (typeof v === 'number' ? v : (v.toMillis ? v.toMillis() : (v.seconds ? v.seconds * 1000 : (Date.parse(v) || 0))));
+            const fmtD = ms => ms ? new Date(ms).toLocaleDateString('en-GB') : '-';
+            const CLASSES = (typeof ALL_CLASSES_LIST !== 'undefined' && Array.isArray(ALL_CLASSES_LIST)) ? ALL_CLASSES_LIST.slice() : [];
+            const SUBJECTS = [['s1', 'ಪ್ರಥಮ ಭಾಷೆ'], ['s2', 'ದ್ವಿತೀಯ ಭಾಷೆ'], ['s3', 'ತೃತೀಯ ಭಾಷೆ'], ['s4', 'ಗಣಿತ'], ['s5', 'ವಿಜ್ಞಾನ / ಪರಿಸರ ಅಧ್ಯಯನ'], ['s6', 'ಸಮಾಜ ವಿಜ್ಞಾನ'], ['s7', 'ದೈಹಿಕ / ಮೌಲ್ಯ ಶಿಕ್ಷಣ']];
+            const subLabel = k => (SUBJECTS.find(x => x[0] === k) || [k, k])[1];
+            const ADMIN_WA = (typeof ADMIN_MOBILE !== 'undefined' ? ADMIN_MOBILE : '');
+            const sess = () => (typeof currentSession !== 'undefined' && currentSession) ? currentSession : {};
+            const isOwner = () => !!(sess().isLoggedIn && sess().role === 'school' && sess().diseCode && !sess().teacher);
+            const isPack = () => isOwner() && sess().plan === 'teacher';
+            const isAdminNow = () => !!(sess().isLoggedIn && sess().role === 'admin');
+            const genOrderId = () => { const a = new Uint8Array(12); (window.crypto || window.msCrypto).getRandomValues(a); return 'O' + Date.now().toString(36).toUpperCase() + Array.from(a, b => (b % 36).toString(36)).join('').toUpperCase(); };
+            const addMonths = (ms, n) => { const d = new Date(ms); d.setMonth(d.getMonth() + n); d.setHours(23, 59, 59, 0); return d.getTime(); };
+            const normRef = v => { v = String(v || '').trim().toUpperCase(); if (/^[6-9]\d{9}$/.test(v)) return 'T' + v; return v.replace(/[^A-Z0-9]/g, ''); };
+
+            // ---------------- Store ಸಂರಚನೆ (Admin ಬದಲಿಸಬಹುದು) ----------------
+            const DEFAULTS = {
+                upiId: '', payeeName: 'KSRMS',
+                prices: { school: { 1: 500, 2: 1000 }, teacher: { 1: 250, 2: 500 } },
+                bonusMonths2y: 6, earlyPct: 20, earlyDays: 30, latePct: 10,
+                referralOff: 50, referralBonusMonths: 1,
+                teacherMaxStudents: 300, teacherMaxSubjectClasses: 5, teacherMaxSubjects: 2
+            };
+            let store = JSON.parse(JSON.stringify(DEFAULTS));
+            let storeLoaded = false;
+            async function loadStore() {
+                try {
+                    const d = await db.collection('ksrms_system').doc('store').get();
+                    const x = d.exists ? (d.data() || {}) : {};
+                    store = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), x);
+                    store.prices = {
+                        school: Object.assign({}, DEFAULTS.prices.school, (x.prices || {}).school || {}),
+                        teacher: Object.assign({}, DEFAULTS.prices.teacher, (x.prices || {}).teacher || {})
+                    };
+                    storeLoaded = true;
+                } catch (e) { console.warn('[KSRMS V9] store config', e && e.code); }
+                return store;
+            }
+
+            // ---------------- ಬೆಲೆ ಲೆಕ್ಕ (ಖರೀದಿದಾರ ಮತ್ತು Admin ಇಬ್ಬರೂ ಇದನ್ನೇ ಬಳಸುತ್ತಾರೆ) ----------------
+            function price(o) {
+                const S = store;
+                const base = Number(((S.prices || {})[o.type] || {})[o.years]) || 0;
+                const months = o.years === 2 ? 24 + (Number(S.bonusMonths2y) || 0) : 12;
+                const cands = [];
+                if (o.kind === 'renew' && o.years === 1 && o.currentExpiry) {
+                    const daysLeft = Math.ceil((o.currentExpiry - Date.now()) / DAY);
+                    if (daysLeft > (Number(S.earlyDays) || 30)) cands.push({ amt: Math.round(base * (Number(S.earlyPct) || 0) / 100), label: `⏰ ಮುಂಚಿತ Renew ರಿಯಾಯಿತಿ ${S.earlyPct}% (${daysLeft} ದಿನ ಬಾಕಿ)` });
+                    else if (daysLeft > 0) cands.push({ amt: Math.round(base * (Number(S.latePct) || 0) / 100), label: `⏰ ಅವಧಿ ಮುಗಿಯುವ ಮೊದಲು Renew ರಿಯಾಯಿತಿ ${S.latePct}% (${daysLeft} ದಿನ ಬಾಕಿ)` });
+                }
+                if (o.kind === 'new' && o.referralValid) cands.push({ amt: Number(S.referralOff) || 0, label: `🎁 Referral ರಿಯಾಯಿತಿ (${o.referralCode})` });
+                cands.sort((a, b) => b.amt - a.amt);
+                const best = cands[0] && cands[0].amt > 0 ? cands[0] : null;
+                const discount = best ? Math.min(best.amt, base) : 0;
+                return { base, months, discount, label: best ? best.label : '', total: base - discount, bonus: o.years === 2 ? (Number(S.bonusMonths2y) || 0) : 0 };
+            }
+
+            // ---------------- ಶಿಕ್ಷಕರ Pack: ಅನುಮತಿ ನಿಯಮಗಳು ----------------
+            function packInfo() {
+                if (!isPack()) return null;
+                const p = sess().pack || {};
+                return {
+                    ct: p.classTeacherOf || '',
+                    subs: Array.isArray(p.subjects) ? p.subjects : [],
+                    subCls: Array.isArray(p.subjectClasses) ? p.subjectClasses : [],
+                    max: Number(p.maxStudents) || Number(store.teacherMaxStudents) || 300
+                };
+            }
+            window.ksrmsPackCanEdit = function (cls, sub) {
+                const p = packInfo(); if (!p) return { ok: true };
+                if (cls && cls === p.ct) return { ok: true };
+                if (cls && p.subCls.includes(cls) && sub !== 'co' && p.subs.includes(sub)) return { ok: true };
+                return { ok: false, why: `📦 ಶಿಕ್ಷಕರ Pack: ${cls || ''} — ${sub === 'co' ? 'ಸಹಪಠ್ಯ' : subLabel(sub)} ನಿಮ್ಮ Pack ನಲ್ಲಿ ಇಲ್ಲ.` };
+            };
+            const prevFilter = window.ksrmsOpsFilter;
+            window.ksrmsOpsFilter = function (o, base) {
+                let r = typeof prevFilter === 'function' ? prevFilter(o, base) : o;
+                const p = packInfo();
+                if (!p || !r) return r;
+                const SEP = '\u0001';
+                const allowedCls = new Set([p.ct, ...p.subCls].filter(Boolean));
+                const clsOf = id => {
+                    const b = base && base.S && base.S[id]; if (b && b.className) return b.className;
+                    const l = (sampleStudents || []).find(s => String(s.id) === String(id)); return l ? l.className : '';
+                };
+                const baseCount = base && base.S ? Object.keys(base.S).length : 0;
+                let room = Math.max(0, p.max - baseCount + (r.removed || []).length);
+                const addedOk = [];
+                let dropped = r._dropped || 0;
+                (r.added || []).forEach(id => { if (allowedCls.has(clsOf(id)) && room > 0) { addedOk.push(id); room--; } else dropped++; });
+                const addedSet = new Set(addedOk);
+                const allow = path => {
+                    const parts = path.split(SEP);
+                    if (parts[0] !== 'S') return true;
+                    const id = parts[1];
+                    if ((r.added || []).includes(id) && !addedSet.has(id)) return false;
+                    const cls = clsOf(id), field = parts[2];
+                    if (field === 'marks' || field === 'hsMarks') return !parts[3] ? allowedCls.has(cls) : window.ksrmsPackCanEdit(cls, parts[3]).ok;
+                    if (field === 'co') return cls === p.ct;
+                    return allowedCls.has(cls);
+                };
+                const out = { sets: {}, dels: {}, added: addedOk, removed: (r.removed || []).slice() };
+                for (const k in r.sets) { if (allow(k)) out.sets[k] = r.sets[k]; else dropped++; }
+                for (const k in r.dels) { if (allow(k)) out.dels[k] = true; else dropped++; }
+                if (dropped === (r._dropped || 0) && addedOk.length === (r.added || []).length) return r;
+                out._dropped = dropped;
+                return out;
+            };
+            const prevDropped = window.ksrmsOnDropped;
+            window.ksrmsOnDropped = function (n) {
+                if (isPack()) {
+                    const p = packInfo();
+                    const t = document.createElement('div');
+                    t.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:100004;background:#0b5394;color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;max-width:92vw;';
+                    t.textContent = `📦 ಶಿಕ್ಷಕರ Pack: ನಿಮ್ಮ Pack ಹೊರಗಿನ ${n} ಬದಲಾವಣೆ ಉಳಿಸಲಾಗಿಲ್ಲ (ತರಗತಿ ಶಿಕ್ಷಕ ವರ್ಗ: ${p.ct || '-'}; ವಿಷಯ ತರಗತಿಗಳು: ${p.subCls.join(', ') || '-'}; ಗರಿಷ್ಠ ${p.max} ಮಕ್ಕಳು).`;
+                    document.body.appendChild(t); setTimeout(() => t.remove(), 6000);
+                    return;
+                }
+                if (typeof prevDropped === 'function') prevDropped(n);
+            };
+
+            // ---------------- ಸಣ್ಣ UI ಸಹಾಯಕಗಳು ----------------
+            function overlay(id, title, html, wide) {
+                const old = document.getElementById(id); if (old) old.remove();
+                const w = document.createElement('div');
+                w.id = id;
+                w.style.cssText = 'position:fixed;inset:0;z-index:100005;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:10px;';
+                w.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:${wide ? 900 : 560}px;width:100%;max-height:94vh;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,.35);">
+                    <div style="background:#800020;color:#fff;padding:10px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center;border-radius:12px 12px 0 0;">
+                        <span>${title}</span><button type="button" data-close style="background:none;border:0;color:#fff;font-size:24px;line-height:1;cursor:pointer;">×</button></div>
+                    <div class="ovBody" style="padding:14px 16px;overflow:auto;font-size:14px;">${html}</div></div>`;
+                document.body.appendChild(w);
+                w.addEventListener('click', e => { if (e.target === w || (e.target.hasAttribute && e.target.hasAttribute('data-close'))) w.remove(); });
+                return w;
+            }
+            let qrLib = null;
+            function loadQR() {
+                if (window.QRCode) return Promise.resolve(true);
+                if (qrLib) return qrLib;
+                qrLib = new Promise(res => {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+                    s.onload = () => res(true); s.onerror = () => res(false);
+                    document.head.appendChild(s);
+                });
+                return qrLib;
+            }
+            const MY_ORDERS = 'ksrms_my_orders';
+            const myOrders = () => { try { return JSON.parse(localStorage.getItem(MY_ORDERS) || '[]'); } catch (e) { return []; } };
+            const addMyOrder = id => { try { const a = myOrders().filter(x => x !== id); a.unshift(id); localStorage.setItem(MY_ORDERS, JSON.stringify(a.slice(0, 10))); } catch (e) {} };
+
+            // ---------------- 🛒 ಖರೀದಿ ವಿಂಡೋ ----------------
+            const cart = { type: 'school', years: 1, kind: 'new', currentExpiry: 0, licenseId: '', referralCode: '', referralValid: false, referralName: '' };
+
+            async function openStore() {
+                const w = overlay('ksrmsStore', '🛒 KSRMS ಖರೀದಿ / Renew', '<div class="text-center p-4">⏳ ಲೋಡ್ ಆಗುತ್ತಿದೆ...</div>');
+                await loadStore();
+                Object.assign(cart, { type: 'school', years: 1, kind: 'new', currentExpiry: 0, licenseId: '', referralCode: '', referralValid: false, referralName: '' });
+                if (isOwner()) {
+                    cart.kind = 'renew';
+                    cart.type = isPack() ? 'teacher' : 'school';
+                    cart.licenseId = String(sess().diseCode);
+                    cart.currentExpiry = Number(sess().expiresAt) || 0;
+                    try {
+                        const d = await db.collection('ksrms_licenses').doc(cart.licenseId).get();
+                        if (d.exists) { cart.currentExpiry = toMs(d.data().expiresAt); try { currentSession.expiresAt = cart.currentExpiry; localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession)); } catch (e) {} }
+                    } catch (e) {}
+                }
+                renderStore(w);
+            }
+            window.ksrmsOpenStore = openStore;
+            try { openPurchaseModal = function () { try { if (loginModalInstance) loginModalInstance.hide(); } catch (e) {} openStore(); }; } catch (e) {}
+
+            function renderStore(w) {
+                const body = w.querySelector('.ovBody');
+                const S = store;
+                const pend = myOrders();
+                const tSel = t => cart.type === t ? 'border-3 border-danger shadow' : 'border';
+                const ySel = y => cart.years === y ? 'border-3 border-danger shadow' : 'border';
+                const sp = (t, y) => (S.prices[t] || {})[y];
+                const isRenew = cart.kind === 'renew';
+                const teacherInSchool = sess().isLoggedIn && sess().role === 'school' && sess().teacher;
+
+                let html = '';
+                if (pend.length) html += `<div class="alert alert-warning py-2 small d-flex justify-content-between align-items-center flex-wrap gap-2"><span>📄 ನಿಮ್ಮ ಹಿಂದಿನ ಆರ್ಡರ್ ಸ್ಥಿತಿ ನೋಡಿ</span><button type="button" class="btn btn-sm btn-dark" id="stMyOrder">ನೋಡಿ</button></div>`;
+                if (teacherInSchool) html += `<div class="alert alert-info py-2 small">👩‍🏫 ನೀವು ಶಾಲೆಯ ಶಿಕ್ಷಕರ ಖಾತೆಯಲ್ಲಿದ್ದೀರಿ. ಶಾಲೆಯ Renew ಅನ್ನು ಮುಖ್ಯಶಿಕ್ಷಕರು ಮಾಡುತ್ತಾರೆ. ನಿಮಗಾಗಿ ಪ್ರತ್ಯೇಕ ಶಿಕ್ಷಕರ Pack ಬೇಕಿದ್ದರೆ ಕೆಳಗೆ ಖರೀದಿಸಬಹುದು.</div>`;
+
+                if (isRenew) {
+                    const left = Math.ceil((cart.currentExpiry - Date.now()) / DAY);
+                    html += `<div class="border rounded p-2 mb-3 bg-light">
+                        <div class="fw-bold">${cart.type === 'teacher' ? '👩‍🏫 ಶಿಕ್ಷಕರ Pack' : '🏫 ಶಾಲಾ Pack'} — ${esc(sess().schoolName || '')} (${esc(cart.licenseId)})</div>
+                        <div class="small">ಈಗಿನ ಅವಧಿ ಮುಕ್ತಾಯ: <b>${fmtD(cart.currentExpiry)}</b> ${cart.currentExpiry ? (left > 0 ? `<span class="badge bg-success">${left} ದಿನ ಬಾಕಿ</span>` : '<span class="badge bg-danger">ಮುಗಿದಿದೆ</span>') : ''}</div>
+                        <div class="small text-muted mt-1">ಬೇರೆ ಶಾಲೆ/ಶಿಕ್ಷಕರಿಗೆ ಹೊಸದಾಗಿ ಖರೀದಿಸಬೇಕಿದ್ದರೆ <a href="#" id="stNewInstead">ಇಲ್ಲಿ ಒತ್ತಿ</a>.</div></div>
+                        <div class="border rounded p-2 mb-3" style="background:#fff8e1;">
+                            <div class="fw-bold">🎁 ನಿಮ್ಮ Referral Code: <span class="text-danger fs-5">${esc(cart.licenseId)}</span></div>
+                            <div class="small">ಈ ಕೋಡ್ ಬಳಸಿ ಹೊಸ ಶಾಲೆ/ಶಿಕ್ಷಕರು ಖರೀದಿಸಿದರೆ ಅವರಿಗೆ ₹${S.referralOff} ರಿಯಾಯಿತಿ, ನಿಮಗೆ ${S.referralBonusMonths} ತಿಂಗಳು ಉಚಿತ ಅವಧಿ ತಾನಾಗಿಯೇ ಸೇರುತ್ತದೆ.</div>
+                            <button type="button" class="btn btn-sm btn-success mt-1" id="stShareRef">📲 WhatsApp ನಲ್ಲಿ ಹಂಚಿಕೊಳ್ಳಿ</button></div>
+                        <div class="mb-3"><button type="button" class="btn btn-sm btn-outline-dark" id="stChangePw">🔑 ನನ್ನ ಲಾಗಿನ್ ಪಾಸ್‌ವರ್ಡ್ ಬದಲಿಸಿ</button></div>`;
+                } else {
+                    html += `<div class="alert alert-light border py-2 small mb-2">👋 ಹೊಸಬರೇ? ಇಲ್ಲಿ ನಿಮ್ಮ ಖಾತೆ ರಚಿಸಿ (ನಿಮ್ಮದೇ ಪಾಸ್‌ವರ್ಡ್ ಹೊಂದಿಸಿ), Pack ಆಯ್ಕೆಮಾಡಿ, ಪಾವತಿಸಿ. Admin ಪರಿಶೀಲಿಸಿದ ತಕ್ಷಣ ಖಾತೆ ಸಕ್ರಿಯವಾಗುತ್ತದೆ.</div>
+                    <div class="fw-bold mb-1">1️⃣ ನೀವು ಯಾರು? (Pack)</div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6"><div class="rounded p-2 h-100 ${tSel('school')}" style="cursor:pointer" data-type="school">
+                            <div class="fw-bold">🏫 ಶಾಲಾ Pack</div><div class="text-danger fw-bold">₹${sp('school', 1)}/ವರ್ಷ</div>
+                            <div class="small text-muted">ಇಡೀ ಶಾಲೆ, ಎಲ್ಲಾ ತರಗತಿ. HM ಪ್ಯಾನೆಲ್, ಶಿಕ್ಷಕರ ಲಾಗಿನ್, ಅಂಕ ಲಾಕ್, ಬದಲಾವಣೆ ದಾಖಲೆ, ದೈನಂದಿನ ಬ್ಯಾಕಪ್ ಸೇರಿ ಎಲ್ಲವೂ.</div></div></div>
+                        <div class="col-6"><div class="rounded p-2 h-100 ${tSel('teacher')}" style="cursor:pointer" data-type="teacher">
+                            <div class="fw-bold">👩‍🏫 ಶಿಕ್ಷಕರ Pack</div><div class="text-danger fw-bold">₹${sp('teacher', 1)}/ವರ್ಷ</div>
+                            <div class="small text-muted">ನಿಮ್ಮ ತರಗತಿ ಶಿಕ್ಷಕ ವರ್ಗದ ಸಂಪೂರ್ಣ ದಾಖಲೆ + ನೀವು ಕಲಿಸುವ ಬೇರೆ ${S.teacherMaxSubjectClasses} ತರಗತಿಗಳವರೆಗೆ ನಿಮ್ಮ ವಿಷಯ. ಲಾಗಿನ್: ನಿಮ್ಮ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ.</div></div></div>
+                    </div>`;
+                }
+
+                html += `<div class="fw-bold mb-1">${isRenew ? '1️⃣' : '2️⃣'} ಅವಧಿ</div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6"><div class="rounded p-2 text-center ${ySel(1)}" style="cursor:pointer" data-years="1"><div class="fw-bold">1 ವರ್ಷ</div><div class="text-danger fw-bold">₹${sp(cart.type, 1)}</div></div></div>
+                        <div class="col-6"><div class="rounded p-2 text-center ${ySel(2)}" style="cursor:pointer" data-years="2"><div class="fw-bold">${(24 + Number(S.bonusMonths2y)) / 12} ವರ್ಷ <span class="badge bg-success">🎁 ${S.bonusMonths2y} ತಿಂಗಳು ಉಚಿತ</span></div><div class="text-danger fw-bold">₹${sp(cart.type, 2)}</div></div></div>
+                    </div>`;
+
+                if (!isRenew) {
+                    const t = cart.type === 'teacher';
+                    html += `<div class="fw-bold mb-1">3️⃣ ನಿಮ್ಮ ಖಾತೆ ವಿವರಗಳು</div><div class="row g-2 mb-2">
+                        ${t ? `<div class="col-md-6"><label class="form-label small fw-bold mb-0">ಶಿಕ್ಷಕರ ಹೆಸರು *</label><input id="stPerson" class="form-control form-control-sm"></div>
+                               <div class="col-md-6"><label class="form-label small fw-bold mb-0">ಮೊಬೈಲ್ (WhatsApp, ಇದೇ ಲಾಗಿನ್ ID) *</label><input id="stMobile" class="form-control form-control-sm" inputmode="numeric" maxlength="10"></div>
+                               <div class="col-md-8"><label class="form-label small fw-bold mb-0">ಶಾಲೆಯ ಹೆಸರು *</label><input id="stSchool" class="form-control form-control-sm"></div>
+                               <div class="col-md-4"><label class="form-label small fw-bold mb-0">ಶಾಲೆಯ DISE (ಗೊತ್ತಿದ್ದರೆ)</label><input id="stDise" class="form-control form-control-sm" inputmode="numeric" maxlength="11"></div>`
+                            : `<div class="col-md-5"><label class="form-label small fw-bold mb-0">DISE Code (11 ಅಂಕೆ) *</label><input id="stDise" class="form-control form-control-sm" inputmode="numeric" maxlength="11"></div>
+                               <div class="col-md-7"><label class="form-label small fw-bold mb-0">ಶಾಲೆಯ ಹೆಸರು *</label><input id="stSchool" class="form-control form-control-sm"></div>
+                               <div class="col-md-6"><label class="form-label small fw-bold mb-0">ಮುಖ್ಯಶಿಕ್ಷಕರ ಹೆಸರು *</label><input id="stPerson" class="form-control form-control-sm"></div>
+                               <div class="col-md-6"><label class="form-label small fw-bold mb-0">ಮೊಬೈಲ್ (WhatsApp) *</label><input id="stMobile" class="form-control form-control-sm" inputmode="numeric" maxlength="10"></div>`}
+                        <div class="col-6"><label class="form-label small fw-bold mb-0">ತಾಲೂಕು *</label><input id="stTaluk" class="form-control form-control-sm"></div>
+                        <div class="col-6"><label class="form-label small fw-bold mb-0">ಜಿಲ್ಲೆ *</label><input id="stDistrict" class="form-control form-control-sm"></div>
+                    </div>
+                    <div class="border rounded p-2 mb-2" style="background:#eef6ff;">
+                        <div class="fw-bold small mb-1">🔐 ಲಾಗಿನ್ ವಿವರ</div>
+                        <div class="small mb-1">ಲಾಗಿನ್ ID: <b>${t ? 'ನಿಮ್ಮ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ' : 'ಶಾಲೆಯ DISE Code'}</b></div>
+                        <div class="row g-2">
+                            <div class="col-6"><label class="form-label small fw-bold mb-0">ಪಾಸ್‌ವರ್ಡ್ ಹೊಂದಿಸಿ * (ಕನಿಷ್ಠ 6)</label><input id="stPw" type="password" class="form-control form-control-sm" autocomplete="new-password"></div>
+                            <div class="col-6"><label class="form-label small fw-bold mb-0">ಪಾಸ್‌ವರ್ಡ್ ಮತ್ತೊಮ್ಮೆ *</label><input id="stPw2" type="password" class="form-control form-control-sm" autocomplete="new-password"></div>
+                        </div>
+                        <div class="small text-muted mt-1">ಈ ಪಾಸ್‌ವರ್ಡ್ ನಿಮಗೆ ಮಾತ್ರ ಗೊತ್ತಿರುತ್ತದೆ — Admin ಗೂ ಕಾಣುವುದಿಲ್ಲ. ಮರೆತರೆ Admin ಹೊಸ Key ಕೊಡುತ್ತಾರೆ.</div>
+                    </div>`;
+                    if (t) {
+                        html += `<div class="border rounded p-2 mb-2 bg-light">
+                            <label class="form-label small fw-bold mb-0">ನೀವು ತರಗತಿ ಶಿಕ್ಷಕರಾಗಿರುವ ವರ್ಗ (ಸಂಪೂರ್ಣ ದಾಖಲೆ)</label>
+                            <select id="stCT" class="form-select form-select-sm mb-2"><option value="">— ತರಗತಿ ಶಿಕ್ಷಕರಲ್ಲ —</option>${CLASSES.map(c => `<option>${esc(c)}</option>`).join('')}</select>
+                            <label class="form-label small fw-bold mb-0">ನೀವು ಕಲಿಸುವ ವಿಷಯ(ಗಳು) — ಗರಿಷ್ಠ ${S.teacherMaxSubjects}</label>
+                            <div class="d-flex flex-wrap gap-1 mb-2">${SUBJECTS.map(([k, l]) => `<label class="badge bg-white text-dark border p-2"><input type="checkbox" class="stSub" value="${k}"> ${esc(l)}</label>`).join('')}</div>
+                            <label class="form-label small fw-bold mb-0">ಆ ವಿಷಯ ಕಲಿಸುವ ಬೇರೆ ತರಗತಿಗಳು — ಗರಿಷ್ಠ ${S.teacherMaxSubjectClasses}</label>
+                            <div class="d-flex flex-wrap gap-1">${CLASSES.map(c => `<label class="badge bg-white text-dark border p-2"><input type="checkbox" class="stSubCls" value="${esc(c)}"> ${esc(c)}</label>`).join('')}</div>
+                            <div class="small text-muted mt-1">ಗರಿಷ್ಠ ${S.teacherMaxStudents} ಮಕ್ಕಳು. ವಿಷಯ ತರಗತಿಗಳಲ್ಲಿ ನಿಮ್ಮ ವಿಷಯದ ಅಂಕ ವಹಿ, ಫಲಿತಾಂಶ ವಿಶ್ಲೇಷಣೆ ಪ್ರಿಂಟ್ ಮಾಡಬಹುದು.</div></div>`;
+                    }
+                    html += `<div class="mb-2"><label class="form-label small fw-bold mb-0">🎁 Referral Code (ಇದ್ದರೆ)</label>
+                        <div class="input-group input-group-sm" style="max-width:360px;"><input id="stRef" class="form-control text-uppercase" value="${esc(cart.referralCode)}" placeholder="DISE / ಮೊಬೈಲ್"><button type="button" class="btn btn-outline-success" id="stRefCheck">ಪರಿಶೀಲಿಸಿ</button></div>
+                        <div id="stRefMsg" class="small mt-1">${cart.referralCode ? (cart.referralValid ? `<span class="text-success">✅ ${esc(cart.referralName)} — ₹${S.referralOff} ರಿಯಾಯಿತಿ</span>` : '<span class="text-danger">❌ ಈ ಕೋಡ್ ಮಾನ್ಯವಲ್ಲ</span>') : ''}</div></div>`;
+                }
+
+                const pr = price(cart);
+                const newExp = addMonths(cart.kind === 'renew' ? Math.max(Date.now(), cart.currentExpiry || 0) : Date.now(), pr.months);
+                html += `<div class="border rounded p-2 mb-3" style="background:#f1f8e9;">
+                    <div class="fw-bold mb-1">🧾 ಒಟ್ಟು ಮೊತ್ತ</div>
+                    <div class="d-flex justify-content-between"><span>${cart.type === 'teacher' ? 'ಶಿಕ್ಷಕರ' : 'ಶಾಲಾ'} Pack — ${cart.years === 2 ? (pr.months / 12) + ' ವರ್ಷ' : '1 ವರ್ಷ'}</span><span>₹${pr.base}</span></div>
+                    ${pr.bonus ? `<div class="d-flex justify-content-between text-success small"><span>🎁 ${pr.bonus} ತಿಂಗಳು ಉಚಿತ ಅವಧಿ</span><span>₹0</span></div>` : ''}
+                    ${pr.discount ? `<div class="d-flex justify-content-between text-success"><span>${esc(pr.label)}</span><span>− ₹${pr.discount}</span></div>` : ''}
+                    <hr class="my-1"><div class="d-flex justify-content-between fw-bold fs-5"><span>ಪಾವತಿಸಬೇಕಾದದ್ದು</span><span class="text-danger">₹${pr.total}</span></div>
+                    <div class="small text-muted">ಅವಧಿ: ${pr.months} ತಿಂಗಳು → ಮುಕ್ತಾಯ ${fmtD(newExp)}</div></div>
+                    <div class="d-grid"><button type="button" class="btn btn-ksrms btn-lg fw-bold" id="stPay">➡️ ಪಾವತಿಗೆ ಮುಂದುವರಿಯಿರಿ (₹${pr.total})</button></div>`;
+                body.innerHTML = html;
+
+                const keep = () => { // ಫಾರ್ಮ್ ಮೌಲ್ಯಗಳನ್ನು ಮರು-ರೆಂಡರ್ ವೇಳೆ ಉಳಿಸಿ
+                    const ids = ['stPerson', 'stMobile', 'stSchool', 'stDise', 'stTaluk', 'stDistrict', 'stCT', 'stRef', 'stPw', 'stPw2'];
+                    const v = {}; ids.forEach(i => { const e = body.querySelector('#' + i); if (e) v[i] = e.value; });
+                    v.subs = [...body.querySelectorAll('.stSub:checked')].map(x => x.value);
+                    v.subCls = [...body.querySelectorAll('.stSubCls:checked')].map(x => x.value);
+                    return v;
+                };
+                const restore = v => {
+                    Object.keys(v).forEach(i => { const e = body.querySelector('#' + i); if (e && typeof v[i] === 'string') e.value = v[i]; });
+                    body.querySelectorAll('.stSub').forEach(x => { x.checked = (v.subs || []).includes(x.value); });
+                    body.querySelectorAll('.stSubCls').forEach(x => { x.checked = (v.subCls || []).includes(x.value); });
+                };
+                if (renderStore._keep) { restore(renderStore._keep); renderStore._keep = null; }
+                const rerender = () => { renderStore._keep = keep(); renderStore(w); };
+
+                body.querySelectorAll('[data-type]').forEach(el => el.onclick = () => { cart.type = el.getAttribute('data-type'); rerender(); });
+                body.querySelectorAll('[data-years]').forEach(el => el.onclick = () => { cart.years = Number(el.getAttribute('data-years')); rerender(); });
+                const mo = body.querySelector('#stMyOrder'); if (mo) mo.onclick = () => showOrderStatus(myOrders()[0]);
+                const cp = body.querySelector('#stChangePw'); if (cp) cp.onclick = () => window.ksrmsChangePassword();
+                const ni = body.querySelector('#stNewInstead'); if (ni) ni.onclick = e => { e.preventDefault(); cart.kind = 'new'; cart.type = 'school'; cart.licenseId = ''; cart.currentExpiry = 0; renderStore(w); };
+                const sr = body.querySelector('#stShareRef'); if (sr) sr.onclick = () => {
+                    const link = location.href.split('#')[0].split('?')[0];
+                    const msg = `ನಮಸ್ಕಾರ 🙏\nಶಾಲೆಯ ಅಂಕ ನಮೂದು, ಪ್ರಗತಿ ಪತ್ರ, ಫಲಿತಾಂಶ ವಿಶ್ಲೇಷಣೆಗೆ ನಾವು KSRMS ಬಳಸುತ್ತಿದ್ದೇವೆ — ತುಂಬಾ ಸುಲಭ.\n\n${link}\n\nಖರೀದಿಸುವಾಗ ನನ್ನ Referral Code *${cart.licenseId}* ಹಾಕಿದರೆ ನಿಮಗೆ ₹${S.referralOff} ರಿಯಾಯಿತಿ ಸಿಗುತ್ತದೆ.`;
+                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+                };
+                const rc = body.querySelector('#stRefCheck');
+                if (rc) rc.onclick = async () => {
+                    const code = normRef(body.querySelector('#stRef').value);
+                    cart.referralCode = code; cart.referralValid = false; cart.referralName = '';
+                    if (code) {
+                        try {
+                            const d = await db.collection('ksrms_refcodes').doc(code).get();
+                            if (d.exists) { cart.referralValid = true; cart.referralName = (d.data() || {}).name || code; }
+                        } catch (e) {}
+                    }
+                    rerender();
+                };
+                body.querySelector('#stPay').onclick = async () => {
+                    const v = keep();
+                    const o = { kind: cart.kind, type: cart.type, years: cart.years };
+                    if (cart.kind === 'renew') {
+                        Object.assign(o, { licenseId: cart.licenseId, dise: cart.type === 'school' ? cart.licenseId : (sess().schoolDise || ''), schoolName: sess().schoolName || '', personName: sess().packOwner || '', mobile: String(sess().mobile || '').replace(/\D/g, '').slice(-10), taluk: '', district: '', teacher: null });
+                        if (!/^\d{10}$/.test(o.mobile)) {
+                            const m = prompt('ನಿಮ್ಮ WhatsApp ಮೊಬೈಲ್ ಸಂಖ್ಯೆ (10 ಅಂಕೆ):', '');
+                            if (!m || !/^\d{10}$/.test(m.replace(/\D/g, ''))) return alert('ಸರಿಯಾದ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ಹಾಕಿ.');
+                            o.mobile = m.replace(/\D/g, '');
+                        }
+                    } else {
+                        const mob = (v.stMobile || '').replace(/\D/g, '');
+                        const dise = (v.stDise || '').replace(/\D/g, '');
+                        if (!(v.stPerson || '').trim()) return alert('ಹೆಸರು ಹಾಕಿ.');
+                        if (!/^[6-9]\d{9}$/.test(mob)) return alert('ಸರಿಯಾದ 10 ಅಂಕೆಯ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ಹಾಕಿ.');
+                        if (!(v.stSchool || '').trim()) return alert('ಶಾಲೆಯ ಹೆಸರು ಹಾಕಿ.');
+                        if (!(v.stTaluk || '').trim() || !(v.stDistrict || '').trim()) return alert('ತಾಲೂಕು ಮತ್ತು ಜಿಲ್ಲೆ ಹಾಕಿ.');
+                        if (cart.type === 'school' && !/^\d{11}$/.test(dise)) return alert('11 ಅಂಕೆಯ DISE Code ಹಾಕಿ.');
+                        if (String(v.stPw || '').length < 6) return alert('ಪಾಸ್‌ವರ್ಡ್ ಕನಿಷ್ಠ 6 ಅಕ್ಷರ ಇರಬೇಕು.');
+                        if (v.stPw !== v.stPw2) return alert('ಎರಡೂ ಪಾಸ್‌ವರ್ಡ್ ಒಂದೇ ಆಗಿಲ್ಲ.');
+                        let teacher = null;
+                        if (cart.type === 'teacher') {
+                            const subs = v.subs || [], subCls = (v.subCls || []).filter(c => c !== v.stCT);
+                            if (!v.stCT && !subCls.length) return alert('ತರಗತಿ ಶಿಕ್ಷಕ ವರ್ಗ ಅಥವಾ ವಿಷಯ ಕಲಿಸುವ ತರಗತಿ — ಕನಿಷ್ಠ ಒಂದನ್ನು ಆಯ್ಕೆಮಾಡಿ.');
+                            if (subCls.length && !subs.length) return alert('ನೀವು ಕಲಿಸುವ ವಿಷಯ ಆಯ್ಕೆಮಾಡಿ.');
+                            if (subs.length > Number(S.teacherMaxSubjects)) return alert(`ಗರಿಷ್ಠ ${S.teacherMaxSubjects} ವಿಷಯಗಳು.`);
+                            if (subCls.length > Number(S.teacherMaxSubjectClasses)) return alert(`ವಿಷಯ ತರಗತಿಗಳು ಗರಿಷ್ಠ ${S.teacherMaxSubjectClasses}.`);
+                            teacher = { classTeacherOf: v.stCT || '', subjects: subs, subjectClasses: subCls, maxStudents: Number(S.teacherMaxStudents) || 300 };
+                        }
+                        cart.referralCode = normRef(v.stRef || '');
+                        if (cart.referralCode && !cart.referralValid) { cart.referralCode = ''; }
+                        const licenseId = cart.type === 'school' ? dise : 'T' + mob;
+                        if (cart.referralCode && cart.referralCode === licenseId) { cart.referralCode = ''; cart.referralValid = false; }
+                        Object.assign(o, { licenseId, dise, schoolName: v.stSchool.trim(), personName: v.stPerson.trim(), mobile: mob, taluk: v.stTaluk.trim(), district: v.stDistrict.trim(), teacher });
+                        try { o.passHash = await window.ksrmsPassHash(licenseId, v.stPw); }
+                        catch (e) { return alert('ಈ browser ನಲ್ಲಿ ಸುರಕ್ಷಿತ ಪಾಸ್‌ವರ್ಡ್ ಸಾಧ್ಯವಿಲ್ಲ. Chrome ನ ಹೊಸ ಆವೃತ್ತಿ ಬಳಸಿ.'); }
+                    }
+                    o.referralCode = cart.kind === 'new' && cart.referralValid ? cart.referralCode : '';
+                    o.currentExpiry = cart.kind === 'renew' ? (cart.currentExpiry || 0) : 0;
+                    o.pricing = price(Object.assign({}, o, { referralValid: !!o.referralCode }));
+                    showPayment(w, o);
+                };
+            }
+
+            async function showPayment(w, o) {
+                const body = w.querySelector('.ovBody');
+                const S = store;
+                if (!S.upiId) {
+                    body.innerHTML = `<div class="alert alert-warning">ಆನ್‌ಲೈನ್ ಪಾವತಿ ವಿವರ ಇನ್ನೂ ಸಿದ್ಧವಾಗಿಲ್ಲ. ದಯವಿಟ್ಟು Admin ಅನ್ನು WhatsApp ನಲ್ಲಿ ಸಂಪರ್ಕಿಸಿ.</div>
+                        <a class="btn btn-success w-100" target="_blank" href="https://api.whatsapp.com/send?phone=91${ADMIN_WA}&text=${encodeURIComponent('KSRMS ಖರೀದಿ: ' + (o.schoolName || '') + ' ' + (o.licenseId || ''))}">📲 Admin ಗೆ WhatsApp</a>`;
+                    return;
+                }
+                const amt = o.pricing.total;
+                const note = `KSRMS ${o.licenseId}`.slice(0, 40);
+                const upi = `upi://pay?pa=${encodeURIComponent(S.upiId)}&pn=${encodeURIComponent(S.payeeName || 'KSRMS')}&am=${amt}&cu=INR&tn=${encodeURIComponent(note)}`;
+                body.innerHTML = `
+                    <div class="text-center">
+                        <div class="fw-bold mb-1">4️⃣ ಪಾವತಿಸಿ: <span class="text-danger fs-4">₹${amt}</span></div>
+                        <div id="stQR" class="d-inline-block p-2 bg-white border rounded mb-2"></div>
+                        <div class="small mb-2">ಯಾವುದೇ UPI ಆ್ಯಪ್‌ನಲ್ಲಿ (PhonePe, GPay, Paytm, BHIM) ಸ್ಕ್ಯಾನ್ ಮಾಡಿ</div>
+                        <div class="mb-2">UPI ID: <b id="stUpi">${esc(S.upiId)}</b> <button type="button" class="btn btn-xs btn-outline-secondary py-0" id="stCopy">📋 Copy</button></div>
+                        <a class="btn btn-primary fw-bold mb-3 d-md-none" href="${upi}">📱 UPI ಆ್ಯಪ್ ತೆರೆದು ₹${amt} ಪಾವತಿಸಿ</a>
+                    </div>
+                    <div class="border rounded p-2 bg-light">
+                        <label class="form-label fw-bold mb-0">5️⃣ ಪಾವತಿಯ UTR / Transaction ID (12 ಅಂಕೆ) *</label>
+                        <div class="small text-muted mb-1">ಪಾವತಿ ಯಶಸ್ವಿಯಾದ ನಂತರ ನಿಮ್ಮ UPI ಆ್ಯಪ್‌ನಲ್ಲಿ ಕಾಣುವ UTR / UPI Ref. No.</div>
+                        <input id="stUtr" class="form-control fw-bold mb-2" inputmode="numeric" maxlength="30" placeholder="ಉದಾ: 431256789012">
+                        <div class="d-grid"><button type="button" class="btn btn-success fw-bold" id="stSubmit">✅ ಆರ್ಡರ್ ಸಲ್ಲಿಸಿ</button></div>
+                    </div>
+                    <div class="text-center mt-2"><a href="#" id="stBack" class="small">⬅️ ಹಿಂದಕ್ಕೆ</a></div>`;
+                body.querySelector('#stBack').onclick = e => { e.preventDefault(); renderStore(w); };
+                body.querySelector('#stCopy').onclick = () => { try { navigator.clipboard.writeText(S.upiId); } catch (e) {} };
+                if (await loadQR()) {
+                    try { new QRCode(body.querySelector('#stQR'), { text: upi, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
+                } else body.querySelector('#stQR').innerHTML = '<div class="small text-muted p-3">QR ಲೋಡ್ ಆಗಲಿಲ್ಲ — ಮೇಲಿನ UPI ID ಗೆ ಪಾವತಿಸಿ.</div>';
+                body.querySelector('#stSubmit').onclick = async () => {
+                    const utr = body.querySelector('#stUtr').value.replace(/\s/g, '').toUpperCase();
+                    if (!/^[A-Z0-9]{6,30}$/.test(utr)) return alert('ಸರಿಯಾದ UTR / Transaction ID ಹಾಕಿ.');
+                    const btn = body.querySelector('#stSubmit'); btn.disabled = true; btn.textContent = '⏳ ಸಲ್ಲಿಸಲಾಗುತ್ತಿದೆ...';
+                    const id = genOrderId();
+                    const doc = {
+                        id, type: o.type, kind: o.kind, years: o.years, licenseId: o.licenseId, dise: o.dise || '',
+                        schoolName: o.schoolName || '', personName: o.personName || '', mobile: o.mobile, taluk: o.taluk || '', district: o.district || '',
+                        teacher: o.teacher || null, referralCode: o.referralCode || '', pricing: o.pricing, utr,
+                        status: 'PENDING', createdAt: Date.now(), currentExpiry: o.currentExpiry || 0
+                    };
+                    if (o.passHash) doc.passHash = o.passHash;
+                    try {
+                        await db.collection('ksrms_orders').doc(id).set(doc);
+                        addMyOrder(id);
+                        showOrderStatus(id, true);
+                    } catch (e) {
+                        btn.disabled = false; btn.textContent = '✅ ಆರ್ಡರ್ ಸಲ್ಲಿಸಿ';
+                        alert('ಆರ್ಡರ್ ಸಲ್ಲಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ (' + ((e && e.code) || e) + '). ಇಂಟರ್ನೆಟ್ ಪರಿಶೀಲಿಸಿ ಅಥವಾ Admin ಅನ್ನು ಸಂಪರ್ಕಿಸಿ.');
+                    }
+                };
+            }
+
+            let orderUnsub = null;
+            function showOrderStatus(id, fresh) {
+                if (!id) return;
+                const w = overlay('ksrmsStore', '📄 ಆರ್ಡರ್ ಸ್ಥಿತಿ', '<div class="text-center p-4">⏳</div>');
+                const body = w.querySelector('.ovBody');
+                if (orderUnsub) { try { orderUnsub(); } catch (e) {} }
+                orderUnsub = db.collection('ksrms_orders').doc(id).onSnapshot(d => {
+                    if (!document.body.contains(w)) { try { orderUnsub(); } catch (e) {} return; }
+                    if (!d.exists) { body.innerHTML = '<div class="text-muted">ಆರ್ಡರ್ ದೊರೆಯಲಿಲ್ಲ.</div>'; return; }
+                    const x = d.data();
+                    const wa = `https://api.whatsapp.com/send?phone=91${ADMIN_WA}&text=${encodeURIComponent(`KSRMS ಆರ್ಡರ್ ${x.id}\n${x.schoolName} (${x.licenseId})\n₹${x.pricing && x.pricing.total} — UTR: ${x.utr}\nದಯವಿಟ್ಟು ಅನುಮೋದಿಸಿ.`)}`;
+                    if (x.status === 'APPROVED') {
+                        const loginId = String(x.licenseId).startsWith('T') ? String(x.licenseId).slice(1) : x.licenseId;
+                        body.innerHTML = `<div class="text-center">
+                            <div class="fs-1">🎉</div><h5 class="fw-bold text-success">ಪಾವತಿ ದೃಢೀಕರಿಸಲಾಗಿದೆ!</h5>
+                            ${x.kind === 'renew'
+                                ? `<div class="mb-2">ನಿಮ್ಮ ಅವಧಿಯನ್ನು <b>${fmtD(x.newExpiry)}</b> ವರೆಗೆ ವಿಸ್ತರಿಸಲಾಗಿದೆ.</div>`
+                                : `<div class="mb-1">ನಿಮ್ಮ ಖಾತೆ ಸಕ್ರಿಯವಾಗಿದೆ ✅</div>
+                                   <div class="mb-1">ಲಾಗಿನ್ ID: <b class="fs-5">${esc(loginId)}</b></div>
+                                   ${x.secretKey ? `<div class="mb-1">Secret Key:</div><div class="fs-3 fw-bold text-danger mb-2" style="letter-spacing:1px;">${esc(x.secretKey)}</div>`
+                                                 : `<div class="mb-2">ಪಾಸ್‌ವರ್ಡ್: <b>ನೋಂದಣಿಯಲ್ಲಿ ನೀವೇ ಹೊಂದಿಸಿದ ಪಾಸ್‌ವರ್ಡ್</b></div>`}
+                                   <div class="small text-muted mb-2">ಅವಧಿ ಮುಕ್ತಾಯ: ${fmtD(x.newExpiry)}.</div>
+                                   <button type="button" class="btn btn-ksrms fw-bold" id="stGoLogin">➡️ ಈಗ ಲಾಗಿನ್ ಆಗಿ</button>`}</div>`;
+                        const gl = body.querySelector('#stGoLogin');
+                        if (gl) gl.onclick = () => {
+                            w.remove();
+                            try { loginModalInstance.show(); } catch (e) {}
+                            setTimeout(() => {
+                                const a = document.getElementById('loginDiseCode'), b = document.getElementById('loginSecretKey');
+                                if (a) a.value = loginId; if (b) { b.value = x.secretKey || ''; if (!x.secretKey) b.focus(); }
+                                try { document.getElementById('school-tab').click(); } catch (e) {}
+                            }, 400);
+                        };
+                        if (x.kind === 'renew' && isOwner() && String(sess().diseCode) === String(x.licenseId)) {
+                            try { currentSession.expiresAt = x.newExpiry; localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession)); } catch (e) {}
+                        }
+                    } else if (x.status === 'REJECTED') {
+                        body.innerHTML = `<div class="text-center"><div class="fs-1">⚠️</div><h5 class="fw-bold text-danger">ಆರ್ಡರ್ ಅನುಮೋದನೆಯಾಗಿಲ್ಲ</h5>
+                            <div class="mb-2">${esc(x.rejectReason || 'ಪಾವತಿ ದೃಢೀಕರಣ ಆಗಿಲ್ಲ.')}</div>
+                            <a class="btn btn-success" target="_blank" href="${wa}">📲 Admin ಗೆ WhatsApp</a></div>`;
+                    } else {
+                        body.innerHTML = `<div class="text-center">
+                            <div class="fs-1">⏳</div><h5 class="fw-bold">${fresh ? 'ಆರ್ಡರ್ ಸ್ವೀಕರಿಸಲಾಗಿದೆ!' : 'ಪರಿಶೀಲನೆಯಲ್ಲಿದೆ'}</h5>
+                            <div class="mb-2">ಪಾವತಿ ಪರಿಶೀಲಿಸಿದ ತಕ್ಷಣ ${x.kind === 'renew' ? 'ಅವಧಿ ವಿಸ್ತರಣೆ' : (x.passHash ? 'ಖಾತೆ ಸಕ್ರಿಯಗೊಂಡ ಸೂಚನೆ' : 'ನಿಮ್ಮ Secret Key')} <b>ಇದೇ ಪರದೆಯಲ್ಲಿ</b> ಕಾಣುತ್ತದೆ. ಸಾಮಾನ್ಯವಾಗಿ ಕೆಲವು ಗಂಟೆಗಳೊಳಗೆ.</div>
+                            <div class="small text-muted mb-2">ಆರ್ಡರ್ ಸಂಖ್ಯೆ: ${esc(x.id)} · ₹${x.pricing && x.pricing.total} · UTR ${esc(x.utr)}<br>ನಂತರ ನೋಡಲು: "Buy Key" → "ನಿಮ್ಮ ಹಿಂದಿನ ಆರ್ಡರ್ ಸ್ಥಿತಿ".</div>
+                            <a class="btn btn-success" target="_blank" href="${wa}">📲 ಬೇಗ ಅನುಮೋದನೆಗೆ Admin ಗೆ WhatsApp</a></div>`;
+                    }
+                }, () => { body.innerHTML = '<div class="text-danger">ಸ್ಥಿತಿ ನೋಡಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ.</div>'; });
+            }
+
+            // ---------------- ಮಾಲೀಕರಿಗೆ Renew ನೆನಪು ಚಿಪ್ ----------------
+            function renewChip() {
+                let c = document.getElementById('ksrmsRenewChip');
+                const exp = Number(sess().expiresAt) || 0;
+                const left = exp ? Math.ceil((exp - Date.now()) / DAY) : null;
+                const show = isOwner() && (isPack() || (left !== null && left <= 45));
+                if (!show) { if (c) c.remove(); return; }
+                if (!c) {
+                    c = document.createElement('button');
+                    c.id = 'ksrmsRenewChip'; c.type = 'button';
+                    c.style.cssText = 'position:fixed;right:10px;bottom:62px;z-index:99996;border:0;border-radius:20px;padding:7px 14px;font-weight:700;font-size:13px;box-shadow:0 3px 10px rgba(0,0,0,.3);color:#fff;';
+                    c.onclick = openStore;
+                    document.body.appendChild(c);
+                }
+                if (isPack()) {
+                    c.style.background = '#0b5394';
+                    c.textContent = `📦 ಶಿಕ್ಷಕರ Pack${left !== null && left <= 45 ? ` · ${left > 0 ? left + ' ದಿನ ಬಾಕಿ' : 'ಮುಗಿದಿದೆ'}` : ''}`;
+                } else {
+                    c.style.background = left > 0 ? '#e67e22' : '#c0392b';
+                    c.style.bottom = '110px';
+                    c.textContent = left > 0 ? `🛒 Renew — ${left} ದಿನ ಬಾಕಿ` : '🛒 ಅವಧಿ ಮುಗಿದಿದೆ — Renew';
+                }
+            }
+            setInterval(renewChip, 3000);
+
+            // ಹಳೆಯ ಸೆಷನ್‌ಗಳಿಗೆ ಅವಧಿ ಮಾಹಿತಿ ತುಂಬುವುದು
+            setTimeout(async () => {
+                if (!isOwner() || sess().expiresAt) return;
+                try {
+                    const d = await db.collection('ksrms_licenses').doc(String(sess().diseCode)).get();
+                    if (d.exists) { currentSession.expiresAt = toMs(d.data().expiresAt); localStorage.setItem('ksrms_active_session', JSON.stringify(currentSession)); }
+                } catch (e) {}
+            }, 6000);
+
+            // ======================================================================
+            // ADMIN: 🛒 ಆರ್ಡರ್‌ಗಳು + ⚙️ Store ಸೆಟ್ಟಿಂಗ್ಸ್
+            // ======================================================================
+            let pendingCount = 0, adminBtnTimer = null;
+            async function refreshAdminOrdersBtn(toastIt) {
+                if (!isAdminNow()) return;
+                try {
+                    const qs = await db.collection('ksrms_orders').where('status', '==', 'PENDING').get();
+                    pendingCount = qs.size;
+                } catch (e) { return; }
+                const anchor = document.getElementById('adminRevenueAnalyticsCards') || document.querySelector('#adminPanelModal .table-responsive');
+                if (anchor && !document.getElementById('ksrmsOrdersBar')) {
+                    const bar = document.createElement('div');
+                    bar.id = 'ksrmsOrdersBar';
+                    bar.className = 'd-flex gap-2 flex-wrap mb-2';
+                    anchor.parentNode.insertBefore(bar, anchor);
+                }
+                const bar = document.getElementById('ksrmsOrdersBar');
+                if (bar) {
+                    bar.innerHTML = `<button type="button" class="btn btn-sm ${pendingCount ? 'btn-danger' : 'btn-outline-danger'} fw-bold" id="admOrders">🛒 ಆನ್‌ಲೈನ್ ಆರ್ಡರ್‌ಗಳು ${pendingCount ? `<span class="badge bg-warning text-dark">${pendingCount} ಹೊಸ</span>` : ''}</button>
+                        <button type="button" class="btn btn-sm btn-outline-dark fw-bold" id="admStoreCfg">⚙️ Store ಸೆಟ್ಟಿಂಗ್ಸ್ (ಬೆಲೆ / UPI / ರಿಯಾಯಿತಿ)</button>`;
+                    bar.querySelector('#admOrders').onclick = openAdminOrders;
+                    bar.querySelector('#admStoreCfg').onclick = openStoreSettings;
+                }
+                if (toastIt && pendingCount) {
+                    const t = document.createElement('div');
+                    t.style.cssText = 'position:fixed;left:50%;top:60px;transform:translateX(-50%);z-index:100004;background:#c0392b;color:#fff;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer;';
+                    t.textContent = `🛒 ${pendingCount} ಹೊಸ ಆನ್‌ಲೈನ್ ಆರ್ಡರ್ — ಪರಿಶೀಲಿಸಿ`;
+                    t.onclick = () => { t.remove(); openAdminOrders(); };
+                    document.body.appendChild(t); setTimeout(() => t.remove(), 9000);
+                }
+            }
+            if (typeof renderAdminKeysTable === 'function') {
+                const _r = renderAdminKeysTable;
+                renderAdminKeysTable = function () {
+                    const res = _r.apply(this, arguments);
+                    clearTimeout(adminBtnTimer);
+                    adminBtnTimer = setTimeout(() => refreshAdminOrdersBtn(!refreshAdminOrdersBtn._shown && (refreshAdminOrdersBtn._shown = true)), 1200);
+                    setTimeout(syncRefCodes, 6000);
+                    return res;
+                };
+            }
+
+            // Referral ಕೋಡ್‌ಗಳ ಸಾರ್ವಜನಿಕ ಪಟ್ಟಿ (ಕೋಡ್ → ಶಾಲೆಯ ಹೆಸರು) — Admin ಸಾಧನ ಸ್ವಯಂ ನವೀಕರಿಸುತ್ತದೆ
+            let refSynced = 0;
+            async function syncRefCodes() {
+                if (!isAdminNow() || Date.now() - refSynced < 30 * 60e3) return;
+                refSynced = Date.now();
+                try {
+                    const [lic, refs] = await Promise.all([db.collection('ksrms_licenses').get(), db.collection('ksrms_refcodes').get()]);
+                    const have = new Set(); refs.forEach(d => have.add(d.id));
+                    const b = db.batch(); let n = 0;
+                    lic.forEach(d => {
+                        if (have.has(d.id) || n >= 450) return;
+                        const x = d.data() || {};
+                        b.set(db.collection('ksrms_refcodes').doc(d.id), { name: (x.plan === 'teacher' ? (x.teacherName || '') + ', ' : '') + (x.schoolName || d.id) });
+                        n++;
+                    });
+                    if (n) await b.commit();
+                } catch (e) { console.warn('[KSRMS V9] refcodes', e && e.code); }
+            }
+
+            async function openAdminOrders() {
+                await loadStore();
+                const w = overlay('ksrmsAdmOrders', '🛒 ಆನ್‌ಲೈನ್ ಆರ್ಡರ್‌ಗಳು', '<div class="p-3">⏳</div>', true);
+                const body = w.querySelector('.ovBody');
+                let showAll = false;
+                const render = async () => {
+                    let list = [];
+                    try {
+                        const q = showAll ? db.collection('ksrms_orders').orderBy('createdAt', 'desc').limit(60) : db.collection('ksrms_orders').where('status', '==', 'PENDING');
+                        const qs = await q.get();
+                        qs.forEach(d => list.push(d.data()));
+                        list.sort((a, b) => b.createdAt - a.createdAt);
+                    } catch (e) { body.innerHTML = `<div class="text-danger">ಆರ್ಡರ್‌ಗಳನ್ನು ತೆರೆಯಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ (${esc((e && e.code) || e)}). ಹೊಸ Rules Publish ಆಗಿದೆಯೇ ನೋಡಿ.</div>`; return; }
+                    const cards = await Promise.all(list.map(async x => {
+                        let lic = null;
+                        try { const d = await db.collection('ksrms_licenses').doc(String(x.licenseId)).get(); if (d.exists) lic = d.data(); } catch (e) {}
+                        let refOk = false;
+                        if (x.referralCode) { try { refOk = (await db.collection('ksrms_refcodes').doc(x.referralCode).get()).exists; } catch (e) {} }
+                        const exp = price({ type: x.type, years: x.years, kind: x.kind, currentExpiry: x.kind === 'renew' && lic ? toMs(lic.expiresAt) : 0, referralValid: refOk, referralCode: x.referralCode });
+                        const mismatch = exp.total !== (x.pricing && x.pricing.total);
+                        const t = x.teacher;
+                        const st = x.status === 'PENDING' ? '<span class="badge bg-warning text-dark">⏳ ಬಾಕಿ</span>' : x.status === 'APPROVED' ? '<span class="badge bg-success">✅ ಅನುಮೋದಿತ</span>' : '<span class="badge bg-secondary">❌ ತಿರಸ್ಕೃತ</span>';
+                        return `<div class="border rounded p-2 mb-2 ${x.status === 'PENDING' ? 'border-warning border-2' : ''}">
+                            <div class="d-flex justify-content-between flex-wrap gap-1">
+                                <div><b>${x.type === 'teacher' ? '👩‍🏫 ಶಿಕ್ಷಕರ Pack' : '🏫 ಶಾಲಾ Pack'}</b> · ${x.kind === 'renew' ? '🔄 Renew' : '🆕 ಹೊಸದು'} · ${x.years === 2 ? (exp.months / 12) + ' ವರ್ಷ' : '1 ವರ್ಷ'} ${st}</div>
+                                <div class="small text-muted">${new Date(x.createdAt).toLocaleString('en-GB')}</div></div>
+                            <div class="small mt-1"><b>${esc(x.schoolName)}</b> · ID: <b>${esc(x.licenseId)}</b>${x.dise && x.dise !== x.licenseId ? ' · DISE ' + esc(x.dise) : ''}<br>
+                                ${esc(x.personName)} · 📱 ${esc(x.mobile)} ${x.taluk ? '· ' + esc(x.taluk) + ', ' + esc(x.district) : ''}
+                                ${t ? `<br>ತರಗತಿ ಶಿಕ್ಷಕ: <b>${esc(t.classTeacherOf || '-')}</b> · ವಿಷಯ: ${esc((t.subjects || []).map(subLabel).join(', ') || '-')} · ವಿಷಯ ತರಗತಿಗಳು: ${esc((t.subjectClasses || []).join(', ') || '-')}` : ''}
+                                ${x.referralCode ? `<br>🎁 Referral: <b>${esc(x.referralCode)}</b> ${refOk ? '✅' : '<span class="text-danger">❌ ಅಮಾನ್ಯ</span>'}` : ''}
+                                ${x.kind === 'new' && lic ? '<br><span class="text-danger fw-bold">⚠️ ಈ ID ಗೆ ಈಗಾಗಲೇ ಲೈಸೆನ್ಸ್ ಇದೆ — ಅನುಮೋದಿಸಿದರೆ ಅವಧಿ ವಿಸ್ತರಣೆ ಮಾತ್ರ ಆಗುತ್ತದೆ (Key ಬದಲಾಗುವುದಿಲ್ಲ).</span>' : ''}
+                                ${x.kind === 'renew' && lic ? `<br>ಈಗಿನ ಮುಕ್ತಾಯ: ${fmtD(toMs(lic.expiresAt))}` : ''}</div>
+                            <div class="mt-1 p-1 rounded" style="background:#f8f9fa;">
+                                💰 <b class="fs-6 text-danger">₹${x.pricing && x.pricing.total}</b> ${x.pricing && x.pricing.discount ? `<small>(₹${x.pricing.base} − ${esc(x.pricing.label)} ₹${x.pricing.discount})</small>` : ''}
+                                · UTR: <b>${esc(x.utr)}</b>
+                                ${mismatch ? `<br><span class="text-danger fw-bold">⚠️ ಲೆಕ್ಕದ ಪ್ರಕಾರ ಬರಬೇಕಾದದ್ದು ₹${exp.total} — ನಿಮ್ಮ ಬ್ಯಾಂಕ್‌ನಲ್ಲಿ ಬಂದ ಮೊತ್ತ ಪರಿಶೀಲಿಸಿ!</span>` : ''}</div>
+                            ${x.status === 'PENDING' ? `<div class="d-flex gap-2 mt-2 flex-wrap">
+                                <button type="button" class="btn btn-sm btn-success fw-bold" data-ok="${esc(x.id)}">✅ ಹಣ ಬಂದಿದೆ — ಅನುಮೋದಿಸಿ</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" data-no="${esc(x.id)}">❌ ತಿರಸ್ಕರಿಸಿ</button>
+                                <a class="btn btn-sm btn-outline-success" target="_blank" href="https://api.whatsapp.com/send?phone=91${esc(x.mobile)}">💬 WhatsApp</a></div>` : (x.status === 'APPROVED' && x.secretKey ? `<div class="small mt-1">Key: <b class="text-danger">${esc(x.secretKey)}</b> · ಮುಕ್ತಾಯ ${fmtD(x.newExpiry)}</div>` : '')}
+                        </div>`;
+                    }));
+                    body.innerHTML = `<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                            <div class="small text-muted">ನಿಮ್ಮ ಬ್ಯಾಂಕ್ / UPI ಆ್ಯಪ್‌ನಲ್ಲಿ UTR ಮತ್ತು ಮೊತ್ತ ಹೊಂದಿಸಿ ನೋಡಿ, ನಂತರ ಅನುಮೋದಿಸಿ. Key ತಾನಾಗಿಯೇ ತಯಾರಾಗಿ ಖರೀದಿದಾರರ ಪರದೆಯಲ್ಲಿ ಕಾಣುತ್ತದೆ.</div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" id="admAll" ${showAll ? 'checked' : ''}><label class="form-check-label small" for="admAll">ಹಳೆಯ ಆರ್ಡರ್‌ಗಳೂ</label></div></div>
+                        ${cards.join('') || '<div class="text-muted p-3 text-center">ಯಾವುದೇ ಬಾಕಿ ಆರ್ಡರ್ ಇಲ್ಲ. 🎉</div>'}`;
+                    body.querySelector('#admAll').onchange = e => { showAll = e.target.checked; body.innerHTML = '⏳'; render(); };
+                    body.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => approve(list.find(x => x.id === b.getAttribute('data-ok')), b).then(() => render()));
+                    body.querySelectorAll('[data-no]').forEach(b => b.onclick = async () => {
+                        const reason = prompt('ತಿರಸ್ಕರಿಸಲು ಕಾರಣ (ಖರೀದಿದಾರರಿಗೆ ಕಾಣುತ್ತದೆ):', 'ಪಾವತಿ ನಮ್ಮ ಖಾತೆಗೆ ಬಂದಿಲ್ಲ. UTR ಪರಿಶೀಲಿಸಿ.');
+                        if (reason === null) return;
+                        try { await db.collection('ksrms_orders').doc(b.getAttribute('data-no')).update({ status: 'REJECTED', rejectReason: reason, rejectedAt: Date.now() }); render(); refreshAdminOrdersBtn(false); }
+                        catch (e) { alert('ವಿಫಲ: ' + ((e && e.code) || e)); }
+                    });
+                };
+                render();
+            }
+
+            function genKey(existing) {
+                let k;
+                do { k = `KSRMS-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`; } while (existing.has(k));
+                return k;
+            }
+
+            async function approve(x, btn) {
+                if (!x) return;
+                const exp0 = price({ type: x.type, years: x.years, kind: 'new' });
+                if (!confirm(`"${x.schoolName}" (${x.licenseId}) ಆರ್ಡರ್ ಅನುಮೋದಿಸಬೇಕೇ?\n\n₹${x.pricing && x.pricing.total} — UTR ${x.utr}\nಈ ಹಣ ನಿಮ್ಮ ಖಾತೆಗೆ ಬಂದಿರುವುದನ್ನು ಖಚಿತಪಡಿಸಿಕೊಂಡಿದ್ದೀರಾ?`)) return;
+                if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+                try {
+                    const licRef = db.collection('ksrms_licenses').doc(String(x.licenseId));
+                    const ld = await licRef.get();
+                    const lic = ld.exists ? ld.data() : null;
+                    const months = exp0.months;
+                    const now = Date.now();
+                    let secretKey = '', newExpiry;
+                    if (lic) {
+                        newExpiry = addMonths(Math.max(now, toMs(lic.expiresAt)), months);
+                        await licRef.update({ expiresAt: newExpiry, status: 'ACTIVE', lastRenewedAt: now, lastOrderId: x.id });
+                    } else {
+                        const existing = new Set((window.allAdminCloudKeys || []).map(k => String(k.secretKey || '').toUpperCase()));
+                        secretKey = x.passHash ? '' : genKey(existing);
+                        newExpiry = addMonths(now, months);
+                        const rec = {
+                            diseCode: String(x.licenseId), schoolName: x.schoolName, mobile: x.mobile, secretKey,
+                            ...(x.passHash ? { keyHash: x.passHash, authMode: 'password' } : {}),
+                            expiresAt: newExpiry, status: 'ACTIVE', createdAt: now, plan: x.type,
+                            hmName: x.type === 'school' ? x.personName : '', taluk: x.taluk || '', district: x.district || '',
+                            source: 'online', firstOrderId: x.id, referredBy: x.referralCode || ''
+                        };
+                        if (x.type === 'teacher') Object.assign(rec, { teacherName: x.personName, schoolDise: x.dise || '', teacherPack: x.teacher || {} });
+                        await licRef.set(rec);
+                        if (x.passHash) await db.collection('ksrms_secrets').doc(String(x.licenseId)).set({ keyNorm: x.passHash, updatedAt: now });
+                    }
+                    await db.collection('ksrms_refcodes').doc(String(x.licenseId)).set({ name: (x.type === 'teacher' ? x.personName + ', ' : '') + x.schoolName });
+                    // Referral: ಕೋಡ್ ಕೊಟ್ಟವರಿಗೆ ಉಚಿತ ಅವಧಿ
+                    let refMsg = '';
+                    if (x.kind === 'new' && !lic && x.referralCode && x.referralCode !== x.licenseId) {
+                        try {
+                            const rRef = db.collection('ksrms_licenses').doc(x.referralCode);
+                            const rd = await rRef.get();
+                            if (rd.exists) {
+                                const r = rd.data();
+                                const rExp = addMonths(Math.max(now, toMs(r.expiresAt)), Number(store.referralBonusMonths) || 1);
+                                await rRef.update({ expiresAt: rExp, referralCount: firebase.firestore.FieldValue.increment(1) });
+                                refMsg = `\n🎁 Referral: ${r.schoolName} ಅವಧಿ ${fmtD(rExp)} ವರೆಗೆ ವಿಸ್ತರಿಸಲಾಗಿದೆ.`;
+                            }
+                        } catch (e) { console.warn('[KSRMS V9] referral bonus', e); }
+                    }
+                    await db.collection('ksrms_orders').doc(x.id).update({ status: 'APPROVED', approvedAt: now, secretKey: secretKey || '', newExpiry, licenseCreated: !lic });
+                    if (typeof window.ksrmsSyncSecretsNow === 'function') { try { await window.ksrmsSyncSecretsNow(); } catch (e) {} }
+                    try { if (typeof renderAdminKeysTable === 'function') renderAdminKeysTable(); } catch (e) {}
+                    refreshAdminOrdersBtn(false);
+                    const link = location.href.split('#')[0].split('?')[0];
+                    const loginId = String(x.licenseId).startsWith('T') ? String(x.licenseId).slice(1) : x.licenseId;
+                    const msg = (!lic && !secretKey)
+                        ? `ನಮಸ್ಕಾರ ${x.personName} 🙏\nKSRMS ${x.type === 'teacher' ? 'ಶಿಕ್ಷಕರ' : 'ಶಾಲಾ'} Pack ಸಕ್ರಿಯಗೊಂಡಿದೆ.\n\nವೆಬ್‌ಸೈಟ್: ${link}\nಲಾಗಿನ್ ID: ${loginId}\nಪಾಸ್‌ವರ್ಡ್: ನೋಂದಣಿಯಲ್ಲಿ ನೀವು ಹೊಂದಿಸಿದ್ದು\nಅವಧಿ: ${fmtD(newExpiry)} ವರೆಗೆ\n\nನಿಮ್ಮ Referral Code: ${x.licenseId} — ಹೊಸಬರಿಗೆ ಹಂಚಿ, ನಿಮಗೆ ಉಚಿತ ಅವಧಿ ಪಡೆಯಿರಿ.`
+                        : secretKey
+                        ? `ನಮಸ್ಕಾರ ${x.personName} 🙏\nKSRMS ${x.type === 'teacher' ? 'ಶಿಕ್ಷಕರ' : 'ಶಾಲಾ'} Pack ಸಕ್ರಿಯಗೊಂಡಿದೆ.\n\nವೆಬ್‌ಸೈಟ್: ${link}\nಲಾಗಿನ್ ID: ${loginId}\nSecret Key: ${secretKey}\nಅವಧಿ: ${fmtD(newExpiry)} ವರೆಗೆ\n\nನಿಮ್ಮ Referral Code: ${x.licenseId} — ಹೊಸಬರಿಗೆ ಹಂಚಿ, ನಿಮಗೆ ಉಚಿತ ಅವಧಿ ಪಡೆಯಿರಿ.`
+                        : `ನಮಸ್ಕಾರ ${x.personName || ''} 🙏\nನಿಮ್ಮ KSRMS ಅವಧಿಯನ್ನು ${fmtD(newExpiry)} ವರೆಗೆ ವಿಸ್ತರಿಸಲಾಗಿದೆ. ಧನ್ಯವಾದಗಳು!`;
+                    if (confirm(`✅ ಅನುಮೋದಿಸಲಾಗಿದೆ.${secretKey ? `\nKey: ${secretKey}` : ''}\nಮುಕ್ತಾಯ: ${fmtD(newExpiry)}${refMsg}\n\nಖರೀದಿದಾರರಿಗೆ WhatsApp ಸಂದೇಶ ಕಳುಹಿಸಬೇಕೇ?`)) {
+                        window.open(`https://api.whatsapp.com/send?phone=91${x.mobile}&text=${encodeURIComponent(msg)}`, '_blank');
+                    }
+                } catch (e) {
+                    alert('ಅನುಮೋದನೆ ವಿಫಲವಾಗಿದೆ: ' + ((e && e.code) || e));
+                    if (btn) { btn.disabled = false; btn.textContent = '✅ ಹಣ ಬಂದಿದೆ — ಅನುಮೋದಿಸಿ'; }
+                }
+            }
+
+            async function openStoreSettings() {
+                await loadStore();
+                const S = store;
+                const f = (id, label, val, type) => `<div class="col-6 col-md-4"><label class="form-label small fw-bold mb-0">${label}</label><input id="${id}" type="${type || 'number'}" class="form-control form-control-sm" value="${esc(val)}"></div>`;
+                const w = overlay('ksrmsStoreCfg', '⚙️ Store ಸೆಟ್ಟಿಂಗ್ಸ್', `
+                    <div class="row g-2">
+                        ${f('cfUpi', 'UPI ID *', S.upiId, 'text')}
+                        ${f('cfPayee', 'ಪಾವತಿದಾರರ ಹೆಸರು (UPI ನಲ್ಲಿ ಕಾಣುವ)', S.payeeName, 'text')}
+                        <div class="col-12"><hr class="my-1"><b>💰 ಬೆಲೆಗಳು</b></div>
+                        ${f('cfS1', '🏫 ಶಾಲಾ Pack — 1 ವರ್ಷ ₹', S.prices.school[1])}
+                        ${f('cfS2', '🏫 ಶಾಲಾ Pack — 2 ವರ್ಷದ ಬೆಲೆ ₹', S.prices.school[2])}
+                        ${f('cfT1', '👩‍🏫 ಶಿಕ್ಷಕರ Pack — 1 ವರ್ಷ ₹', S.prices.teacher[1])}
+                        ${f('cfT2', '👩‍🏫 ಶಿಕ್ಷಕರ Pack — 2 ವರ್ಷದ ಬೆಲೆ ₹', S.prices.teacher[2])}
+                        ${f('cfBonus', '2 ವರ್ಷದ Pack ಗೆ ಉಚಿತ ತಿಂಗಳು', S.bonusMonths2y)}
+                        <div class="col-12"><hr class="my-1"><b>⏰ ಮುಂಚಿತ Renew ರಿಯಾಯಿತಿ (1 ವರ್ಷದ Renew ಗೆ)</b></div>
+                        ${f('cfEarlyDays', 'ಇಷ್ಟು ದಿನಕ್ಕಿಂತ ಹೆಚ್ಚು ಬಾಕಿ ಇದ್ದರೆ', S.earlyDays)}
+                        ${f('cfEarlyPct', '… ರಿಯಾಯಿತಿ %', S.earlyPct)}
+                        ${f('cfLatePct', 'ಅದಕ್ಕಿಂತ ಕಡಿಮೆ ದಿನ (ಮುಗಿಯುವ ಮೊದಲು) %', S.latePct)}
+                        <div class="col-12"><hr class="my-1"><b>🎁 Referral</b></div>
+                        ${f('cfRefOff', 'ಹೊಸಬರಿಗೆ ರಿಯಾಯಿತಿ ₹', S.referralOff)}
+                        ${f('cfRefMonths', 'ಕೋಡ್ ಕೊಟ್ಟವರಿಗೆ ಉಚಿತ ತಿಂಗಳು', S.referralBonusMonths)}
+                        <div class="col-12"><hr class="my-1"><b>👩‍🏫 ಶಿಕ್ಷಕರ Pack ಮಿತಿಗಳು</b></div>
+                        ${f('cfTMax', 'ಗರಿಷ್ಠ ಮಕ್ಕಳು', S.teacherMaxStudents)}
+                        ${f('cfTCls', 'ಗರಿಷ್ಠ ವಿಷಯ ತರಗತಿಗಳು', S.teacherMaxSubjectClasses)}
+                        ${f('cfTSub', 'ಗರಿಷ್ಠ ವಿಷಯಗಳು', S.teacherMaxSubjects)}
+                    </div>
+                    <div class="small text-muted mt-2">ಒಮ್ಮೆಗೆ ಒಂದೇ ರಿಯಾಯಿತಿ ಅನ್ವಯವಾಗುತ್ತದೆ (ಹೆಚ್ಚು ಲಾಭದ್ದು). 2 ವರ್ಷದ Pack ಗೆ ಉಚಿತ ತಿಂಗಳು ಇರುವುದರಿಂದ Renew ರಿಯಾಯಿತಿ ಸೇರುವುದಿಲ್ಲ. ಬೆಲೆ ಬದಲಾವಣೆ ಮುಂದಿನ ಆರ್ಡರ್‌ಗಳಿಗೆ ಮಾತ್ರ.</div>
+                    <div class="d-flex justify-content-end gap-2 mt-2"><button type="button" class="btn btn-secondary btn-sm" data-close>ರದ್ದು</button><button type="button" class="btn btn-success btn-sm fw-bold" id="cfSave">💾 ಉಳಿಸಿ</button></div>`);
+                const num = id => Number(w.querySelector('#' + id).value) || 0;
+                w.querySelector('#cfSave').onclick = async () => {
+                    const upi = w.querySelector('#cfUpi').value.trim();
+                    if (!/^[\w.\-]{2,}@[\w.\-]{2,}$/.test(upi)) return alert('ಸರಿಯಾದ UPI ID ಹಾಕಿ (ಉದಾ: name@okaxis).');
+                    const cfg = {
+                        upiId: upi, payeeName: w.querySelector('#cfPayee').value.trim() || 'KSRMS',
+                        prices: { school: { 1: num('cfS1'), 2: num('cfS2') }, teacher: { 1: num('cfT1'), 2: num('cfT2') } },
+                        bonusMonths2y: num('cfBonus'), earlyDays: num('cfEarlyDays'), earlyPct: num('cfEarlyPct'), latePct: num('cfLatePct'),
+                        referralOff: num('cfRefOff'), referralBonusMonths: num('cfRefMonths'),
+                        teacherMaxStudents: num('cfTMax'), teacherMaxSubjectClasses: num('cfTCls'), teacherMaxSubjects: num('cfTSub'),
+                        updatedAt: Date.now()
+                    };
+                    try { await db.collection('ksrms_system').doc('store').set(cfg); store = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), cfg); w.remove(); alert('✅ ಉಳಿಸಲಾಗಿದೆ.'); }
+                    catch (e) { alert('ಉಳಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ: ' + ((e && e.code) || e)); }
+                };
+            }
+
+            // 🔑 ಮಾಲೀಕರು (HM / ಶಿಕ್ಷಕರ Pack) ತಮ್ಮದೇ ಪಾಸ್‌ವರ್ಡ್ ಹೊಂದಿಸುವುದು
+            window.ksrmsChangePassword = function () {
+                if (!isOwner()) return alert('ಮುಖ್ಯ ಲಾಗಿನ್‌ನಿಂದ ಮಾತ್ರ ಪಾಸ್‌ವರ್ಡ್ ಬದಲಿಸಬಹುದು.');
+                const v6 = window.ksrmsV6;
+                const u = v6 && v6.auth.currentUser;
+                if (!u || !u.isAnonymous) return alert('ಮೊದಲು Logout ಮಾಡಿ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ (ಸಂದೇಶದಲ್ಲಿ 🔐 ಬರಬೇಕು).');
+                const d = String(sess().diseCode);
+                const w = overlay('ksrmsPw', '🔑 ಲಾಗಿನ್ ಪಾಸ್‌ವರ್ಡ್ ಬದಲಿಸಿ', `
+                    <div class="small text-muted mb-2">ಲಾಗಿನ್ ID: <b>${esc(d.startsWith('T') ? d.slice(1) : d)}</b>. ಹೊಸ ಪಾಸ್‌ವರ್ಡ್ ಹೊಂದಿಸಿದ ನಂತರ ಹಳೆಯ Key / ಪಾಸ್‌ವರ್ಡ್ ಕೆಲಸ ಮಾಡುವುದಿಲ್ಲ. ಹಳೆಯದರಿಂದ ಲಾಗಿನ್ ಆಗಿರುವ ಬೇರೆ ಸಾಧನಗಳು (ಹಂತ-2 Rules ನಂತರ) ಹೊರಗುಳಿಯುತ್ತವೆ. ಶಿಕ್ಷಕರ ಮೊಬೈಲ್ + PIN ಲಾಗಿನ್‌ಗೆ ಪರಿಣಾಮವಿಲ್ಲ.</div>
+                    <input id="pw1" type="password" class="form-control mb-2" placeholder="ಹೊಸ ಪಾಸ್‌ವರ್ಡ್ (ಕನಿಷ್ಠ 6)" autocomplete="new-password">
+                    <input id="pw2" type="password" class="form-control mb-2" placeholder="ಮತ್ತೊಮ್ಮೆ" autocomplete="new-password">
+                    <div class="d-grid"><button type="button" class="btn btn-danger fw-bold" id="pwSave">💾 ಪಾಸ್‌ವರ್ಡ್ ಉಳಿಸಿ</button></div>`);
+                w.querySelector('#pwSave').onclick = async () => {
+                    const a = w.querySelector('#pw1').value, b = w.querySelector('#pw2').value;
+                    if (a.length < 6) return alert('ಕನಿಷ್ಠ 6 ಅಕ್ಷರ.');
+                    if (a !== b) return alert('ಎರಡೂ ಒಂದೇ ಆಗಿಲ್ಲ.');
+                    const btn = w.querySelector('#pwSave'); btn.disabled = true; btn.textContent = '⏳';
+                    try {
+                        const h = await window.ksrmsPassHash(d, a);
+                        const batch = db.batch();
+                        batch.update(db.collection('ksrms_licenses').doc(d), { secretKey: '', keyHash: h, authMode: 'password' });
+                        batch.set(db.collection('ksrms_secrets').doc(d), { keyNorm: h, updatedAt: Date.now() });
+                        await batch.commit();
+                        await v6.createSession(u.uid, d, h);
+                        w.remove();
+                        alert('✅ ಪಾಸ್‌ವರ್ಡ್ ಬದಲಾಗಿದೆ. ಮುಂದೆ ಈ ಪಾಸ್‌ವರ್ಡ್‌ನಿಂದ ಲಾಗಿನ್ ಆಗಿ.');
+                    } catch (e) {
+                        btn.disabled = false; btn.textContent = '💾 ಪಾಸ್‌ವರ್ಡ್ ಉಳಿಸಿ';
+                        alert(e && e.code === 'permission-denied' ? 'ಅನುಮತಿ ಇಲ್ಲ — ಹೊಸ Firebase Rules Publish ಆಗಿದೆಯೇ ನೋಡಿ, ಅಥವಾ Logout ಮಾಡಿ ಮತ್ತೆ ಲಾಗಿನ್ ಆಗಿ.' : 'ವಿಫಲ: ' + ((e && e.code) || e));
+                    }
+                };
+            };
+
+            loadStore();
+            console.log('[KSRMS V9] Online store, teacher pack & offers active.');
         })();
 
         // ======================================================================
