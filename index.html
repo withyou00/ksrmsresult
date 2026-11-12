@@ -29794,6 +29794,17 @@ function injectBulkStudentEditModalHTML() {
             console.log('[KSRMS V8] Teachers, locks & change log active.');
         })();
 
+        // Bootstrap Modal (ಉದಾ: Admin ಪ್ಯಾನೆಲ್) ತೆರೆದಿರುವಾಗ ಅದರ "focus trap" ನಮ್ಮ ವಿಂಡೋಗಳ
+        // ಇನ್‌ಪುಟ್‌ಗಳಿಗೆ ಟೈಪ್ ಮಾಡಲು ಬಿಡುತ್ತಿರಲಿಲ್ಲ — ನಮ್ಮ ವಿಂಡೋಗಳೊಳಗಿನ focus ಅನ್ನು Bootstrap ಗೆ ತಲುಪದಂತೆ ತಡೆಯುವುದು
+        (function KSRMS_OverlayFocusFix() {
+            const IDS = ['ksrmsAdmOrders', 'ksrmsAdminBackups', 'ksrmsDailyBackupModal', 'ksrmsEditSchool', 'ksrmsHMPanel', 'ksrmsPw', 'ksrmsStore', 'ksrmsStoreCfg'];
+            const sel = IDS.map(i => '#' + i).join(',');
+            document.addEventListener('focusin', e => {
+                const t = e.target;
+                if (t && t.closest && t.closest(sel)) e.stopImmediatePropagation();
+            }, true);
+        })();
+
         // ======================================================================
         // KSRMS V9.0 — 🛒 ಆನ್‌ಲೈನ್ ಖರೀದಿ (Cart) + ಶಿಕ್ಷಕರ Pack + ಸ್ವಯಂ ರಿಯಾಯಿತಿ + Referral
         // ----------------------------------------------------------------------
