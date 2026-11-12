@@ -30591,11 +30591,11 @@ function injectBulkStudentEditModalHTML() {
             const TABS = [
                 ['schools', '🏫 ಶಾಲೆಗಳು'],
                 ['orders', '🛒 ಆರ್ಡರ್‌ಗಳು'],
-                ['newkey', '➕ ಹೊಸ Key (ಕೈಯಾರೆ)'],
                 ['notice', '📢 ಸೂಚನೆ']
             ];
             let current = 'schools';
             try { current = sessionStorage.getItem('ksrms_admin_tab') || 'schools'; } catch (e) {}
+            if (!TABS.some(t => t[0] === current)) current = 'schools';
             let legacyCount = 0;
 
             function build() {
@@ -30659,18 +30659,11 @@ function injectBulkStudentEditModalHTML() {
                 const sp = pane('schools');
                 [total, cards, search && search.parentNode, tableBox].forEach(el => { if (el && el.parentNode !== sp) sp.appendChild(el); });
                 if (tableBox) { tableBox.style.maxHeight = '60vh'; }
-                // ಹೊಸ Key
+                // ಕೈಯಾರೆ Key ಮಾಡುವ ಹಳೆಯ ಭಾಗ — ಈಗ ಶಾಲೆಗಳೇ ಆನ್‌ಲೈನ್‌ನಲ್ಲಿ ನೋಂದಾಯಿಸುವುದರಿಂದ ಮರೆಮಾಡಲಾಗಿದೆ
                 const gName = document.getElementById('admGenSchoolName');
                 const gRow = gName && gName.closest('.row');
                 const gOut = document.getElementById('genKeyOutputContainer');
-                if (gRow && gRow.parentNode !== pane('newkey')) {
-                    const info = document.createElement('div');
-                    info.className = 'small text-muted mb-2';
-                    info.textContent = 'ಆನ್‌ಲೈನ್ ಖರೀದಿ ಇಲ್ಲದೆ ನೇರವಾಗಿ ಹಣ ಪಡೆದ ಶಾಲೆಗೆ ಇಲ್ಲಿ Key ಮಾಡಿ (1 ವರ್ಷ).';
-                    pane('newkey').appendChild(info);
-                    move('newkey', gRow);
-                }
-                move('newkey', gOut);
+                [gRow, gOut].forEach(el => { if (el) { el.style.setProperty('display', 'none', 'important'); if (el.parentNode === b) b.removeChild(el); } });
                 // ಸೂಚನೆ
                 move('notice', document.getElementById('admNoticeInputContainer'));
                 // ಹಳೆಯ ಶೀರ್ಷಿಕೆಗಳು / ಗೆರೆಗಳನ್ನು ಮರೆಮಾಡಿ, ಉಳಿದ ಹೊಸ ಭಾಗಗಳನ್ನು ಶಾಲೆಗಳ ಟ್ಯಾಬ್‌ಗೆ ಸರಿಸಿ
